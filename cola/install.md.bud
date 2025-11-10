@@ -1,0 +1,8 @@
+## Installation
+
+Copy `mulle-todo` to somewhere in your PATH, for example:
+
+```bash
+sudo cp mulle-todo /usr/local/bin/
+sudo chmod +x /usr/local/bin/mulle-todo
+```

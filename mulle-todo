@@ -79,6 +79,9 @@ Commands:
    down <number>    : Move item down in the list
    list [n]         : Display all (or n) todo items (default)
    show [n]         : Display todos like motd (for shell login)
+   scan             : Scan source files for TODO comments (requires .mulle project)
+   scan-import      : Scan and import TODO comments into todo list
+   install          : Install shell integration into your profile
 
    When listing with a limit [n], top 3 items stay in order,
    remaining items are randomly selected to keep all todos visible.
@@ -114,6 +117,73 @@ get_todofile()
       tododir="${HOME}/.mulle/etc/todo"
       RVAL="${tododir}/todo.txt"
    fi
+}
+
+calculate_visual_width()
+{
+   local text="$1"
+   local visual_width=0
+   local i
+   local char
+   local codepoint
+   
+   # Process each character
+   for ((i=0; i<${#text}; i++))
+   do
+      char="${text:i:1}"
+      
+      # Get the UTF-8 byte sequence
+      local bytes=$(printf '%s' "${char}" | od -An -tx1 | tr -d ' \n')
+      
+      # Decode UTF-8 to get codepoint
+      case "${bytes}" in
+         # ASCII (1 byte): 0x00-0x7F
+         [0-7][0-9a-f])
+            visual_width=$((visual_width + 1))
+            ;;
+         
+         # 2-byte UTF-8: 0xC0-0xDF
+         c[0-9a-f][89ab][0-9a-f])
+            visual_width=$((visual_width + 1))
+            ;;
+         
+         # 3-byte UTF-8: 0xE0-0xEF (includes most emoji)
+         e[0-9a-f]*)
+            # Extract the codepoint
+            local b1="0x${bytes:0:2}"
+            local b2="0x${bytes:2:2}"
+            local b3="0x${bytes:4:2}"
+            
+            # Decode: ((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F)
+            codepoint=$(( ((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F) ))
+            
+            # Emoji ranges (most common):
+            # 0x2000-0x27BF: Dingbats, symbols
+            # 0x2B50: Star ⭐
+            # 0xFE00-0xFE0F: Variation selectors
+            if (( (codepoint >= 0x2000 && codepoint <= 0x27BF) || 
+                  (codepoint >= 0x2B00 && codepoint <= 0x2BFF) ))
+            then
+               visual_width=$((visual_width + 2))
+            else
+               visual_width=$((visual_width + 1))
+            fi
+            ;;
+         
+         # 4-byte UTF-8: 0xF0-0xF7 (emoji, special chars)
+         f[0-7]*)
+            # Most 4-byte sequences are emoji
+            visual_width=$((visual_width + 2))
+            ;;
+         
+         *)
+            # Unknown, assume 1
+            visual_width=$((visual_width + 1))
+            ;;
+      esac
+   done
+   
+   RVAL="${visual_width}"
 }
 
 ensure_todofile()
@@ -340,13 +410,22 @@ todo_list()
    local count
    local -a all_lines
    local -a display_lines
+   local todofile
+   
+   get_todofile
+   todofile="${RVAL}"
    
    read_todos
    todos="${RVAL}"
    
    if [ -z "${todos}" ]
    then
-      echo "No todos yet. Add one with: mulle-todo add <text>"
+      if [ -d ".mulle/etc" ] && [ "${MULLE_TODO_GLOBAL}" != "YES" ]
+      then
+         log_info "No todos in this project yet. Add one with: mulle-todo add <text>"
+      else
+         log_info "No todos yet. Add one with: mulle-todo add <text>"
+      fi
       return
    fi
    
@@ -438,12 +517,22 @@ todo_show()
    local max_width=0
    local term_width
    local box_width
+   local todofile
+   
+   get_todofile
+   todofile="${RVAL}"
    
    read_todos
    todos="${RVAL}"
    
    if [ -z "${todos}" ]
    then
+      if [ -d ".mulle/etc" ] && [ "${MULLE_TODO_GLOBAL}" != "YES" ]
+      then
+         log_info "No todos in this project yet. Add one with: mulle-todo add <text>"
+      else
+         log_info "No todos yet. Add one with: mulle-todo add <text>"
+      fi
       return
    fi
    
@@ -514,12 +603,8 @@ todo_show()
    
    for line in "${display_lines[@]}"
    do
-      # Approximate visual width by comparing byte count vs char count
-      # Multi-byte chars (like emoji) will have more bytes than chars
-      local char_len=${#line}
-      local byte_len=$(printf '%s' "${line}" | LC_ALL=C wc -c)
-      local extra_width=$(( (byte_len - char_len) / 2 ))  # Rough emoji estimate
-      local visual_len=$((char_len + extra_width))
+      calculate_visual_width "${line}"
+      local visual_len="${RVAL}"
       local total_width=$((prefix_width + visual_len))
       
       [ ${total_width} -gt ${max_width} ] && max_width=${total_width}
@@ -538,14 +623,19 @@ todo_show()
    printf '━%.0s' $(seq 1 ${box_width})
    echo -e "┓${RESET}"
    
-   # Title - "📋 TODO" (visual width: 2 + 1 + 4 = 7)
+   # Title - "📋 TODO" with background pattern
    local title="📋 TODO"
-   local title_visual_width=7  # emoji(2) + space(1) + TODO(4)
+   calculate_visual_width "${title}"
+   local title_visual_width="${RVAL}"
    local padding=$(( (box_width - title_visual_width) / 2 ))
    echo -e -n "${CYAN}┃${RESET}"
-   printf ' %.0s' $(seq 1 ${padding})
+   # Left background (minus 1 for space before emoji)
+   printf "${CYAN}░%.0s${RESET}" $(seq 1 $((padding - 1)))
+   printf " "
    echo -e -n "${YELLOW}${title}${RESET}"
-   printf ' %.0s' $(seq 1 $((box_width - title_visual_width - padding)))
+   printf " "
+   # Right background (minus 1 for space after TODO)
+   printf "${CYAN}░%.0s${RESET}" $(seq 1 $((box_width - title_visual_width - padding - 1)))
    echo -e "${CYAN}┃${RESET}"
    
    # Separator
@@ -561,10 +651,8 @@ todo_show()
       
       # Calculate actual visual width needed for this item
       local num_digits=${#item_num}
-      local char_len=${#item_text}
-      local byte_len=$(printf '%s' "${item_text}" | LC_ALL=C wc -c)
-      local extra_width=$(( (byte_len - char_len) / 2 ))
-      local text_visual_width=$((char_len + extra_width))
+      calculate_visual_width "${item_text}"
+      local text_visual_width="${RVAL}"
       local item_prefix_width=$((num_digits + 4))  # "▸ N. "
       local needed_width=$((item_prefix_width + text_visual_width))
       
@@ -574,7 +662,8 @@ todo_show()
          # Rough truncation
          local keep_chars=$((max_text_width - 4))
          item_text="${item_text:0:${keep_chars}}..."
-         text_visual_width=$((keep_chars + 3))
+         calculate_visual_width "${item_text}"
+         text_visual_width="${RVAL}"
       fi
       
       local padding_right=$((content_width - item_prefix_width - text_visual_width))
@@ -617,6 +706,278 @@ todo_show()
    echo -e -n "${CYAN}┗"
    printf '━%.0s' $(seq 1 ${box_width})
    echo -e "┛${RESET}"
+}
+
+todo_scan()
+{
+   local import_mode="${1}"  # "import" or empty for display
+   local file
+   local -a files
+   local line
+   local in_todo=0
+   local todo_text=""
+   local todo_file=""
+   local todo_line=""
+   local count=0
+   local -a scanned_todos
+
+   # Only works in mulle projects
+   if [ ! -d ".mulle" ]
+   then
+      fail "TODO scanning requires a .mulle directory (mulle project)"
+   fi
+
+   # Check if mulle-sde is available
+   if command -v mulle-sde >/dev/null 2>&1
+   then
+      log_info "Using mulle-sde to get file list..."
+      IFS=$'\n' read -d '' -ra files < <(mulle-sde files --raw-files 2>/dev/null) || true
+   else
+      log_info "Using find to get file list (mulle-sde not found)..."
+      IFS=$'\n' read -d '' -ra files < <(find . -type f \( -name "*.c" -o -name "*.h" -o -name "*.m" -o -name "*.sh" -o -name "*.py" -o -name "*.js" -o -name "*.java" \) ! -path "./.mulle/*" 2>/dev/null) || true
+   fi
+
+   if [ ${#files[@]} -eq 0 ]
+   then
+      log_warning "No files found to scan"
+      return
+   fi
+
+   # If in import mode, first collect all scanned TODOs
+   if [ "${import_mode}" = "import" ]
+   then
+      scanned_todos=()
+   fi
+
+   # Process each file
+   for file in "${files[@]}"
+   do
+      [ ! -f "${file}" ] && continue
+
+      in_todo=0
+      todo_text=""
+      todo_file="${file}"
+      todo_line=""
+
+      while IFS= read -r line
+      do
+         # Check for TODO markers
+         if [[ "${line}" =~ (//|#|/\*)[[:space:]]*TODO:?[[:space:]]*(.*) ]]
+         then
+            # Start of a TODO
+            in_todo=1
+            todo_text="${BASH_REMATCH[2]}"
+            todo_line="${line}"
+
+            # Check if it's a single line TODO
+            if [[ "${line}" =~ ^[[:space:]]*(//|#)[[:space:]]*TODO ]]; then
+               # Single line comment style - continue reading consecutive comments
+               :
+            elif [[ "${line}" =~ /\*.*\*/ ]]; then
+               # Single line /* TODO */ style
+               if [ "${import_mode}" = "import" ]
+               then
+                  scanned_todos+=("📝 ${todo_file}: ${todo_text}")
+               else
+                  printf "  📝 %s: %s\n" "${todo_file}" "${todo_text}"
+               fi
+               count=$((count + 1))
+               in_todo=0
+               todo_text=""
+            fi
+         elif [ ${in_todo} -eq 1 ]
+         then
+            # Check if line continues the comment
+            if [[ "${line}" =~ ^[[:space:]]*(//|#)[[:space:]]+(.*) ]]; then
+               # Continuation of single-line comment style
+               local continuation="${BASH_REMATCH[2]}"
+               if [ -n "${continuation}" ]; then
+                  todo_text="${todo_text} ${continuation}"
+               fi
+            elif [[ "${line}" =~ ^[[:space:]]*\*[[:space:]]+(.*) ]]; then
+               # Continuation of /* */ style comment
+               local continuation="${BASH_REMATCH[1]}"
+               if [ -n "${continuation}" ]; then
+                  todo_text="${todo_text} ${continuation}"
+               fi
+            elif [[ "${line}" =~ \*/ ]]; then
+               # End of /* */ style comment
+               if [ "${import_mode}" = "import" ]
+               then
+                  scanned_todos+=("📝 ${todo_file}: ${todo_text}")
+               else
+                  printf "  📝 %s: %s\n" "${todo_file}" "${todo_text}"
+               fi
+               count=$((count + 1))
+               in_todo=0
+               todo_text=""
+            else
+               # Not a comment continuation - output current TODO
+               if [ -n "${todo_text}" ]; then
+                  if [ "${import_mode}" = "import" ]
+                  then
+                     scanned_todos+=("📝 ${todo_file}: ${todo_text}")
+                  else
+                     printf "  📝 %s: %s\n" "${todo_file}" "${todo_text}"
+                  fi
+                  count=$((count + 1))
+               fi
+               in_todo=0
+               todo_text=""
+            fi
+         fi
+      done < "${file}"
+
+      # Output any remaining TODO
+      if [ ${in_todo} -eq 1 ] && [ -n "${todo_text}" ]
+      then
+         if [ "${import_mode}" = "import" ]
+         then
+            scanned_todos+=("📝 ${todo_file}: ${todo_text}")
+         else
+            printf "  📝 %s: %s\n" "${todo_file}" "${todo_text}"
+         fi
+         count=$((count + 1))
+      fi
+   done
+
+   if [ ${count} -eq 0 ]
+   then
+      log_info "No TODO comments found in source files"
+      if [ "${import_mode}" = "import" ]
+      then
+         # Still need to remove old scanned todos
+         remove_scanned_todos
+      fi
+      return
+   else
+      log_info "Found ${count} TODO comment(s)"
+   fi
+   
+   # Import mode: replace all scanned todos
+   if [ "${import_mode}" = "import" ]
+   then
+      log_verbose "Removing old scanned TODOs..."
+      remove_scanned_todos
+      
+      log_verbose "Adding ${#scanned_todos[@]} new scanned TODOs..."
+      local todofile
+      ensure_todofile
+      get_todofile
+      todofile="${RVAL}"
+      
+      for todo_text in "${scanned_todos[@]}"
+      do
+         r_add_unique_line "${todofile}" "${todo_text}"
+         redirect_append_exekutor "${todofile}" printf "%s\n" "${RVAL}"
+      done
+      
+      log_info "Imported ${#scanned_todos[@]} TODO(s) from source files"
+   fi
+}
+
+remove_scanned_todos()
+{
+   local todofile
+   local todos
+   local line
+   local -a filtered_todos
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   [ ! -f "${todofile}" ] && return
+   
+   read_todos
+   todos="${RVAL}"
+   
+   [ -z "${todos}" ] && return
+   
+   # Keep only todos that don't start with 📝
+   filtered_todos=()
+   while IFS= read -r line
+   do
+      # Skip lines that start with 📝 (auto-generated from scan)
+      if [[ ! "${line}" =~ ^📝[[:space:]] ]]
+      then
+         filtered_todos+=("${line}")
+      fi
+   done <<< "${todos}"
+   
+   # Write back the filtered list
+   {
+      printf "%s\n" "# Todo List"
+      for line in "${filtered_todos[@]}"
+      do
+         printf "%s\n" "${line}"
+      done
+   } > "${todofile}"
+}
+
+install_shell_integration()
+{
+   local shell_rc
+   local integration_code
+   local uname
+
+   # Detect platform
+   uname="${MULLE_UNAME:-$(uname)}"
+
+   case "${uname}" in
+      darwin|Darwin)
+         # macOS - zsh is default since Catalina
+         if [ -n "${ZSH_VERSION}" ] || [ "${SHELL}" = "/bin/zsh" ] || [ "${SHELL}" = "/usr/bin/zsh" ]
+         then
+            shell_rc="${HOME}/.zshrc"
+         else
+            shell_rc="${HOME}/.bash_profile"
+         fi
+      ;;
+
+      linux|Linux)
+         # Linux - check what shell is being used
+         if [ -n "${ZSH_VERSION}" ] || [ "${SHELL}" = "/bin/zsh" ] || [ "${SHELL}" = "/usr/bin/zsh" ]
+         then
+            shell_rc="${HOME}/.zshrc"
+         else
+            shell_rc="${HOME}/.bashrc"
+         fi
+      ;;
+
+      *)
+         # Default to .profile for unknown platforms
+         shell_rc="${HOME}/.profile"
+      ;;
+   esac
+
+   # Check if already installed
+   if [ -f "${shell_rc}" ] && grep -q "mulle-todo show" "${shell_rc}" 2>/dev/null
+   then
+      log_info "Shell integration already installed in ${shell_rc}"
+      return 0
+   fi
+
+   # Integration code (without aliases)
+   integration_code='
+# mulle-todo - Display todos on shell login
+if command -v mulle-todo >/dev/null 2>&1; then
+    mulle-todo show 8 2>/dev/null
+fi
+'
+
+   # Backup existing rc file
+   if [ -f "${shell_rc}" ]
+   then
+      log_verbose "Backing up ${shell_rc} to ${shell_rc}.bak"
+      cp "${shell_rc}" "${shell_rc}.bak"
+   fi
+
+   # Append integration code
+   log_info "Installing shell integration into ${shell_rc}"
+   printf "%s\n" "${integration_code}" >> "${shell_rc}"
+
+   log_info "✅ Shell integration installed successfully!"
+   log_info "Open a new shell or run: source ${shell_rc}"
 }
 
 main()
@@ -703,6 +1064,18 @@ main()
          todo_show "$@"
       ;;
       
+      scan)
+         todo_scan
+      ;;
+
+      scan-import)
+         todo_scan "import"
+      ;;
+
+      install|install-shell-integration)
+         install_shell_integration
+      ;;
+
       *)
          fail "Unknown command: ${cmd}"
       ;;

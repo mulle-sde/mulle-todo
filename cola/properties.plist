@@ -1,0 +1,12 @@
+{
+   project =
+   {
+      description="📋 Beautiful todo list manager for shell environments";
+      domain="github";
+      name="mulle-todo";
+      username="mulle-nat";
+      reponame="mulle-todo";
+      homepage="https://github.com/mulle-nat/mulle-todo";
+      license="BSD-3-Clause"
+   };
+}
