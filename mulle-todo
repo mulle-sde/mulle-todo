@@ -1,0 +1,712 @@
+#! /usr/bin/env mulle-bash
+#! MULLE_BASHFUNCTIONS_VERSION=6.6.3
+# shellcheck shell=bash
+#
+#
+#  mulle-todo.sh
+#
+#  Copyright (c) 2025 Nat! - Mulle kybernetiK
+#  All rights reserved.
+#
+#
+#  Redistribution and use in source and binary forms, with or without
+#  modification, are permitted provided that the following conditions are met:
+#
+#  Redistributions of source code must retain the above copyright notice, this
+#  list of conditions and the following disclaimer.
+#
+#  Redistributions in binary form must reproduce the above copyright notice,
+#  this list of conditions and the following disclaimer in the documentation
+#  and/or other materials provided with the distribution.
+#
+#  Neither the name of <ORGANIZATION> nor the names of its contributors
+#  may be used to endorse or promote products derived from this software
+#  without specific prior written permission.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+#  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+#  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+#  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+#  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+#  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+#  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+#  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+#  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+#  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+#  POSSIBILITY OF SUCH DAMAGE.
+#
+
+[ "${TRACE}" = 'YES' -o "${MULLE_TODO_TRACE}" = 'YES' ] && set -x  && : "$0" "$@"
+
+### >> START OF mulle-boot.sh >>
+### << END OF mulle-boot.sh <<
+
+#
+# Versioning of this script
+#
+MULLE_EXECUTABLE_VERSION="0.0.0"
+
+
+### >> START OF mulle-bashfunctions-embed.sh >>
+### << END OF mulle-bashfunctions-embed.sh <<
+
+print_flags()
+{
+   echo "   -f            : force operation"
+   echo "   --file <path> : Use custom todo file (default: ~/.mulle/etc/todo/todo.txt)"
+
+
+   options_technical_flags_usage "         : "
+}
+
+
+usage()
+{
+   [ $# -ne 0 ] && log_error "$*"
+
+
+   cat <<EOF >&2
+Usage:
+   mulle-todo [flags] [command] [args...]
+
+   A simple todo list manager for your shell.
+
+Commands:
+   add <text>       : Add a new todo item
+   remove <number>  : Remove todo item by number
+   remove-all       : Remove all todo items
+   up <number>      : Move item up in the list
+   down <number>    : Move item down in the list
+   list [n]         : Display all (or n) todo items (default)
+   show [n]         : Display todos like motd (for shell login)
+
+   When listing with a limit [n], top 3 items stay in order,
+   remaining items are randomly selected to keep all todos visible.
+
+Flags:
+EOF
+   print_flags | LC_ALL=C sort >&2
+
+   exit 1
+}
+
+
+get_todofile()
+{
+   local tododir
+   
+   if [ -n "${MULLE_TODO_FILE}" ]
+   then
+      # Explicit --file flag takes precedence
+      RVAL="${MULLE_TODO_FILE}"
+   elif [ "${MULLE_TODO_GLOBAL}" = "YES" ]
+   then
+      # -g/--global flag: use global location
+      tododir="${HOME}/.mulle/etc/todo"
+      RVAL="${tododir}/todo.txt"
+   elif [ -d ".mulle/etc" ]
+   then
+      # Local .mulle/etc exists: use project-local location
+      tododir=".mulle/etc/todo"
+      RVAL="${tododir}/todo.txt"
+   else
+      # Default: global location
+      tododir="${HOME}/.mulle/etc/todo"
+      RVAL="${tododir}/todo.txt"
+   fi
+}
+
+ensure_todofile()
+{
+   local todofile
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   r_mkdir_parent_if_missing "${todofile}"
+   
+   if [ ! -f "${todofile}" ]
+   then
+      redirect_exekutor "${todofile}" printf "%s\n" "# Todo List"
+   fi
+}
+
+read_todos()
+{
+   local todofile
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   if [ ! -f "${todofile}" ]
+   then
+      RVAL=""
+      return
+   fi
+   
+   RVAL="$(grep -v '^#' "${todofile}" 2>/dev/null || true)"
+}
+
+write_todos()
+{
+   local todos="$1"
+   local todofile
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   ensure_todofile
+   
+   {
+      printf "%s\n" "# Todo List"
+      printf "%s\n" "${todos}"
+   } > "${todofile}"
+}
+
+todo_add()
+{
+   local text="$*"
+   local todofile
+   
+   [ -z "${text}" ] && fail "No todo text provided"
+   
+   ensure_todofile
+   get_todofile
+   todofile="${RVAL}"
+   
+   redirect_append_exekutor "${todofile}" printf "%s\n" "${text}"
+   
+   log_info "Added: ${text}"
+}
+
+todo_remove()
+{
+   local number="$1"
+   local todos
+   local count
+   local i
+   local line
+   
+   [ -z "${number}" ] && fail "No item number provided"
+   
+   read_todos
+   todos="${RVAL}"
+   
+   [ -z "${todos}" ] && fail "Todo list is empty"
+   
+   count=$(printf "%s\n" "${todos}" | wc -l)
+   
+   [ "${number}" -lt 1 ] && fail "Item number must be >= 1"
+   [ "${number}" -gt "${count}" ] && fail "Item number ${number} out of range (1-${count})"
+   
+   local todofile
+   get_todofile
+   todofile="${RVAL}"
+   
+   {
+      printf "%s\n" "# Todo List"
+      i=1
+      while IFS= read -r line || [ -n "${line}" ]
+      do
+         if [ "${i}" -ne "${number}" ]
+         then
+            printf "%s\n" "${line}"
+         fi
+         i=$((i + 1))
+      done <<< "${todos}"
+   } > "${todofile}"
+   
+   log_info "Removed item ${number}"
+}
+
+todo_remove_all()
+{
+   local todofile
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   if [ ! -f "${todofile}" ]
+   then
+      log_info "Todo list is already empty"
+      return
+   fi
+   
+   redirect_exekutor "${todofile}" printf "%s\n" "# Todo List"
+   log_info "Removed all todo items"
+}
+
+todo_move_up()
+{
+   local number="$1"
+   local todos
+   local count
+   local i
+   local line
+   local prev_line
+   
+   [ -z "${number}" ] && fail "No item number provided"
+   
+   read_todos
+   todos="${RVAL}"
+   
+   [ -z "${todos}" ] && fail "Todo list is empty"
+   
+   count=$(printf "%s\n" "${todos}" | wc -l)
+   
+   [ "${number}" -lt 2 ] && fail "Item ${number} cannot be moved up"
+   [ "${number}" -gt "${count}" ] && fail "Item number ${number} out of range (1-${count})"
+   
+   local todofile
+   get_todofile
+   todofile="${RVAL}"
+   
+   {
+      printf "%s\n" "# Todo List"
+      i=1
+      prev_line=""
+      while IFS= read -r line || [ -n "${line}" ]
+      do
+         if [ "${i}" -eq $((number - 1)) ]
+         then
+            prev_line="${line}"
+         elif [ "${i}" -eq "${number}" ]
+         then
+            printf "%s\n" "${line}"
+            printf "%s\n" "${prev_line}"
+         else
+            printf "%s\n" "${line}"
+         fi
+         i=$((i + 1))
+      done <<< "${todos}"
+   } > "${todofile}"
+   
+   log_info "Moved item ${number} up"
+}
+
+todo_move_down()
+{
+   local number="$1"
+   local todos
+   local count
+   local i
+   local line
+   local next_line
+   local skip_next
+   
+   [ -z "${number}" ] && fail "No item number provided"
+   
+   read_todos
+   todos="${RVAL}"
+   
+   [ -z "${todos}" ] && fail "Todo list is empty"
+   
+   count=$(printf "%s\n" "${todos}" | wc -l)
+   
+   [ "${number}" -lt 1 ] && fail "Item number must be >= 1"
+   [ "${number}" -ge "${count}" ] && fail "Item ${number} cannot be moved down"
+   
+   local todofile
+   local -a lines_arr
+   get_todofile
+   todofile="${RVAL}"
+   
+   IFS=$'\n' read -d '' -ra lines_arr <<< "${todos}" || true
+   
+   {
+      printf "%s\n" "# Todo List"
+      for ((i=0; i<${#lines_arr[@]}; i++))
+      do
+         if [ $((i + 1)) -eq "${number}" ]
+         then
+            printf "%s\n" "${lines_arr[$((i + 1))]}"
+            printf "%s\n" "${lines_arr[${i}]}"
+            i=$((i + 1))
+         else
+            printf "%s\n" "${lines_arr[${i}]}"
+         fi
+      done
+   } > "${todofile}"
+   
+   log_info "Moved item ${number} down"
+}
+
+todo_list()
+{
+   local todos
+   local i
+   local line
+   local limit="${1}"
+   local count
+   local -a all_lines
+   local -a display_lines
+   
+   read_todos
+   todos="${RVAL}"
+   
+   if [ -z "${todos}" ]
+   then
+      echo "No todos yet. Add one with: mulle-todo add <text>"
+      return
+   fi
+   
+   IFS=$'\n' read -d '' -ra all_lines <<< "${todos}" || true
+   count=${#all_lines[@]}
+   
+   if [ -n "${limit}" ] && [ "${limit}" -lt "${count}" ]
+   then
+      # Handle small limits
+      if [ "${limit}" -le 3 ]
+      then
+         # Just show the first N items
+         for ((i=0; i<limit && i<count; i++))
+         do
+            printf "%3d. %s\n" "$((i + 1))" "${all_lines[${i}]}"
+         done
+         printf "\n... showing %d of %d items\n" "${limit}" "${count}"
+         return
+      fi
+      
+      # Keep top 3, randomize the rest
+      local -a top_three
+      local -a rest
+      local -a shuffled
+      
+      # Get top 3
+      for ((i=0; i<3 && i<count; i++))
+      do
+         top_three+=("${all_lines[${i}]}")
+      done
+      
+      # Get remaining items
+      for ((i=3; i<count; i++))
+      do
+         rest+=("${all_lines[${i}]}")
+      done
+      
+      # Shuffle remaining items
+      if [ ${#rest[@]} -gt 0 ]
+      then
+         local oldifs="${IFS}"
+         IFS=$'\n'
+         shuffled=($(printf "%s\n" "${rest[@]}" | shuf))
+         IFS="${oldifs}"
+      fi
+      
+      # Build display list
+      display_lines=("${top_three[@]}")
+      
+      local remaining=$((limit - 3))
+      if [ "${remaining}" -gt 0 ] && [ ${#shuffled[@]} -gt 0 ]
+      then
+         for ((i=0; i<remaining && i<${#shuffled[@]}; i++))
+         do
+            display_lines+=("${shuffled[${i}]}")
+         done
+      fi
+      
+      # Display
+      for ((i=0; i<${#display_lines[@]}; i++))
+      do
+         printf "%3d. %s\n" "$((i + 1))" "${display_lines[${i}]}"
+      done
+      
+      if [ "${limit}" -lt "${count}" ]
+      then
+         printf "\n... showing %d of %d items (top 3 + random %d)\n" "${limit}" "${count}" "$((limit - 3))"
+      fi
+   else
+      # Display all
+      i=1
+      for line in "${all_lines[@]}"
+      do
+         printf "%3d. %s\n" "${i}" "${line}"
+         i=$((i + 1))
+      done
+   fi
+}
+
+todo_show()
+{
+   local todos
+   local i
+   local line
+   local limit="${1}"
+   local count
+   local -a all_lines
+   local -a display_lines
+   local max_width=0
+   local term_width
+   local box_width
+   
+   read_todos
+   todos="${RVAL}"
+   
+   if [ -z "${todos}" ]
+   then
+      return
+   fi
+   
+   # Colors
+   local CYAN='\033[1;36m'
+   local GREEN='\033[1;32m'
+   local YELLOW='\033[1;33m'
+   local BLUE='\033[1;34m'
+   local RESET='\033[0m'
+   
+   IFS=$'\n' read -d '' -ra all_lines <<< "${todos}" || true
+   count=${#all_lines[@]}
+   
+   # Determine which items to display
+   if [ -n "${limit}" ] && [ "${limit}" -lt "${count}" ]
+   then
+      # Handle small limits
+      if [ "${limit}" -le 3 ]
+      then
+         for ((i=0; i<limit && i<count; i++))
+         do
+            display_lines+=("${all_lines[${i}]}")
+         done
+      else
+         # Keep top 3, randomize the rest
+         local -a top_three
+         local -a rest
+         local -a shuffled
+         
+         for ((i=0; i<3 && i<count; i++))
+         do
+            top_three+=("${all_lines[${i}]}")
+         done
+         
+         for ((i=3; i<count; i++))
+         do
+            rest+=("${all_lines[${i}]}")
+         done
+         
+         if [ ${#rest[@]} -gt 0 ]
+         then
+            local oldifs="${IFS}"
+            IFS=$'\n'
+            shuffled=($(printf "%s\n" "${rest[@]}" | shuf))
+            IFS="${oldifs}"
+         fi
+         
+         display_lines=("${top_three[@]}")
+         
+         local remaining=$((limit - 3))
+         if [ "${remaining}" -gt 0 ] && [ ${#shuffled[@]} -gt 0 ]
+         then
+            for ((i=0; i<remaining && i<${#shuffled[@]}; i++))
+            do
+               display_lines+=("${shuffled[${i}]}")
+            done
+         fi
+      fi
+   else
+      display_lines=("${all_lines[@]}")
+   fi
+   
+   # Calculate max content width considering number width and emoji
+   # Number width: "▸ NNN. " where NNN can be 1-3 digits
+   local num_items=${#display_lines[@]}
+   local num_width=${#num_items}  # digits in highest number
+   local prefix_width=$((num_width + 4))  # "▸ N. " minimum
+   
+   for line in "${display_lines[@]}"
+   do
+      # Approximate visual width by comparing byte count vs char count
+      # Multi-byte chars (like emoji) will have more bytes than chars
+      local char_len=${#line}
+      local byte_len=$(printf '%s' "${line}" | LC_ALL=C wc -c)
+      local extra_width=$(( (byte_len - char_len) / 2 ))  # Rough emoji estimate
+      local visual_len=$((char_len + extra_width))
+      local total_width=$((prefix_width + visual_len))
+      
+      [ ${total_width} -gt ${max_width} ] && max_width=${total_width}
+   done
+   
+   # Set box width
+   term_width=$(tput cols 2>/dev/null || echo 80)
+   box_width=$((max_width + 4))  # Add padding
+   [ ${box_width} -lt 40 ] && box_width=40
+   [ ${box_width} -gt $((term_width - 4)) ] && box_width=$((term_width - 4))
+   
+   local content_width=$((box_width - 2))  # Space between "┃ " and " ┃"
+   
+   # Draw box with heavy style
+   echo -e -n "${CYAN}┏"
+   printf '━%.0s' $(seq 1 ${box_width})
+   echo -e "┓${RESET}"
+   
+   # Title - "📋 TODO" (visual width: 2 + 1 + 4 = 7)
+   local title="📋 TODO"
+   local title_visual_width=7  # emoji(2) + space(1) + TODO(4)
+   local padding=$(( (box_width - title_visual_width) / 2 ))
+   echo -e -n "${CYAN}┃${RESET}"
+   printf ' %.0s' $(seq 1 ${padding})
+   echo -e -n "${YELLOW}${title}${RESET}"
+   printf ' %.0s' $(seq 1 $((box_width - title_visual_width - padding)))
+   echo -e "${CYAN}┃${RESET}"
+   
+   # Separator
+   echo -e -n "${CYAN}┣"
+   printf '━%.0s' $(seq 1 ${box_width})
+   echo -e "┫${RESET}"
+   
+   # Items
+   for ((i=0; i<${#display_lines[@]}; i++))
+   do
+      local item_num=$((i + 1))
+      local item_text="${display_lines[${i}]}"
+      
+      # Calculate actual visual width needed for this item
+      local num_digits=${#item_num}
+      local char_len=${#item_text}
+      local byte_len=$(printf '%s' "${item_text}" | LC_ALL=C wc -c)
+      local extra_width=$(( (byte_len - char_len) / 2 ))
+      local text_visual_width=$((char_len + extra_width))
+      local item_prefix_width=$((num_digits + 4))  # "▸ N. "
+      local needed_width=$((item_prefix_width + text_visual_width))
+      
+      # Truncate if too long
+      local max_text_width=$((content_width - item_prefix_width))
+      if [ ${text_visual_width} -gt ${max_text_width} ]; then
+         # Rough truncation
+         local keep_chars=$((max_text_width - 4))
+         item_text="${item_text:0:${keep_chars}}..."
+         text_visual_width=$((keep_chars + 3))
+      fi
+      
+      local padding_right=$((content_width - item_prefix_width - text_visual_width))
+      [ ${padding_right} -lt 0 ] && padding_right=0
+      
+      echo -e -n "${CYAN}┃${RESET} "
+      echo -e -n "${GREEN}▸${RESET} ${BLUE}${item_num}.${RESET} ${item_text}"
+      printf ' %.0s' $(seq 1 ${padding_right})
+      echo -e " ${CYAN}┃${RESET}"
+   done
+   
+   # Show truncation info if applicable
+   if [ -n "${limit}" ] && [ "${limit}" -lt "${count}" ]
+   then
+      echo -e -n "${CYAN}┣"
+      printf '━%.0s' $(seq 1 ${box_width})
+      echo -e "┫${RESET}"
+      
+      local info_text
+      if [ "${limit}" -le 3 ]; then
+         info_text="Showing ${limit} of ${count} items"
+      else
+         local random_count=${#shuffled[@]}
+         [ ${random_count} -gt $((limit - 3)) ] && random_count=$((limit - 3))
+         info_text="Showing ${limit} of ${count} (top 3 + ${random_count} random)"
+      fi
+      
+      # "✨ " is 3 visual width (emoji=2, space=1)
+      local info_visual_len=$((${#info_text} + 3))
+      local info_padding=$(( (box_width - info_visual_len) / 2 ))
+      
+      echo -e -n "${CYAN}┃${RESET}"
+      printf ' %.0s' $(seq 1 ${info_padding})
+      echo -e -n "${YELLOW}✨ ${info_text}${RESET}"
+      printf ' %.0s' $(seq 1 $((box_width - info_visual_len - info_padding)))
+      echo -e "${CYAN}┃${RESET}"
+   fi
+   
+   # Bottom border
+   echo -e -n "${CYAN}┗"
+   printf '━%.0s' $(seq 1 ${box_width})
+   echo -e "┛${RESET}"
+}
+
+main()
+{
+   local OPTION_VALUE
+   local cmd
+
+   while [ $# -ne 0 ]
+   do
+      if options_technical_flags "$1"
+      then
+         shift
+         continue
+      fi
+
+      case "$1" in
+         -f|--force)
+            MULLE_FLAG_MAGNUM_FORCE='YES'
+         ;;
+
+         -g|--global)
+            MULLE_TODO_GLOBAL='YES'
+         ;;
+
+         --file)
+            [ $# -eq 1 ] && usage "missing argument to $1"
+            shift
+
+            MULLE_TODO_FILE="$1"
+         ;;
+
+         -h*|--help|help)
+            usage
+         ;;
+
+         --version)
+            printf "%s\n" "${MULLE_EXECUTABLE_VERSION}"
+            exit 0
+         ;;
+
+         -*)
+            usage "Unknown flag \"$1\""
+         ;;
+
+         *)
+            break
+         ;;
+      esac
+
+      shift
+   done
+
+   options_setup_trace "${MULLE_TRACE}" && set -x
+
+   cmd="${1:-show}"
+   shift || true
+
+   case "${cmd}" in
+      add)
+         todo_add "$@"
+      ;;
+      
+      remove|rm|del)
+         todo_remove "$@"
+      ;;
+      
+      remove-all|clear)
+         todo_remove_all
+      ;;
+      
+      up)
+         todo_move_up "$@"
+      ;;
+      
+      down)
+         todo_move_down "$@"
+      ;;
+      
+      list|ls)
+         todo_list "$@"
+      ;;
+      
+      show)
+         todo_show "$@"
+      ;;
+      
+      *)
+         fail "Unknown command: ${cmd}"
+      ;;
+   esac
+}
+
+main "$@"
