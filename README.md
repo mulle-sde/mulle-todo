@@ -1,22 +1,25 @@
-# mulle-todo
+# 📋 Beautiful todo list manager for shell environments
 
-## Features
+... for Android, BSDs, Linux, macOS, SunOS, Windows (MinGW, WSL)
 
-- ✨ **Beautiful box-drawn interface** with colors and emojis
-- 📝 **Simple commands** - add, remove, reorder tasks
-- 🎯 **Smart truncation** - top 3 items stay visible, rest rotate randomly
-- 🚀 **Shell integration** - display on login like motd
-- 💾 **Plain text storage** - easy to backup and sync
-- 🧪 **Comprehensive test suite** - 41 tests covering all functionality
+A simple but elegant todo list manager that displays on shell login (like motd) with beautiful Unicode box drawing, emoji support, and smart features.
 
-## Installation
+**Key Features:**
 
-Copy `mulle-todo` to somewhere in your PATH, for example:
+* ✨ Beautiful box-drawn interface with colors and emojis
+* 📝 Simple commands - add, remove, reorder tasks
+* 🎯 Smart truncation - top 3 items stay visible, rest rotate randomly
+* 🚀 Shell integration - display on login like motd
+* 💾 Plain text storage - easy to backup and sync
+* 🧪 Comprehensive test suite - 41 tests covering all functionality
 
-```bash
-sudo cp mulle-todo /usr/local/bin/
-sudo chmod +x /usr/local/bin/mulle-todo
-```
+| Release Version                                       | Release Notes
+|-------------------------------------------------------|--------------
+| ![Mulle kybernetiK tag](https://img.shields.io/github/tag/mulle-nat/mulle-todo.svg)  | [RELEASENOTES](RELEASENOTES.md) |
+
+
+
+
 
 ## Usage
 
@@ -31,6 +34,7 @@ sudo chmod +x /usr/local/bin/mulle-todo
 - `mulle-todo down <number>` - Move an item down in the list
 - `mulle-todo scan` - Scan source files for TODO comments (experimental)
 - `mulle-todo scan-import` - Import scanned TODOs into your list (experimental)
+- `mulle-todo install-shell-integration` - Install shell integration into your shell profile
 
 ### Options
 
@@ -98,7 +102,23 @@ mulle-todo --file ~/personal-todos.txt add "Buy groceries"
 
 ## Shell Integration
 
-To display your todo list when you log into a shell (like `~/.motd`), add this to your `~/.bashrc` or `~/.zshrc`:
+### Quick Install (Recommended)
+
+The easiest way to set up shell integration is to use the built-in installer:
+
+```bash
+mulle-todo install-shell-integration
+```
+
+This will automatically:
+- Detect your shell (bash/zsh) and platform (Linux/macOS)
+- Add the integration code to the appropriate file (~/.bashrc, ~/.zshrc, or ~/.bash_profile)
+- Create a backup of your existing shell configuration
+- Display todos on every new shell session (limited to 8 items)
+
+### Manual Setup
+
+If you prefer to set it up manually, add this to your `~/.bashrc` or `~/.zshrc`:
 
 ```bash
 # Display todo list on login (limit to 8 items)
@@ -159,6 +179,22 @@ Tests use isolated temporary files via the `--file` flag, so they won't touch yo
 
 See [test/README.md](test/README.md) for more details on running individual test suites.
 
-## License
 
-See the license header in the `mulle-todo` script.
+
+
+
+
+## Installation
+
+Copy `mulle-todo` to somewhere in your PATH, for example:
+
+```bash
+sudo cp mulle-todo /usr/local/bin/
+sudo chmod +x /usr/local/bin/mulle-todo
+```
+
+## Author
+
+[Nat!](https://mulle-kybernetik.com/weblog) for Mulle kybernetiK
+
+
