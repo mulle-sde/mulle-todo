@@ -593,15 +593,17 @@ todo_show()
    log_setting "data line content width (prefix+text): ${max_width}"
    
    # Set box width
-   term_width=$(tput cols 2>/dev/null || echo 80)
-   box_width=$((max_width + 2))  # box_width = longest content + 2 spaces
-   [ ${box_width} -lt 40 ] && box_width=40
-   [ ${box_width} -gt $((term_width - 4)) ] && box_width=$((term_width - 4))
+   term_cols=$(tput cols 2>/dev/null); [ -z "${term_cols}" ] && term_cols=80
+   max_total_width=$((term_cols - 1))
+   # Interior content (between borders) cannot exceed total-2
+   local allowed_content_max=$((max_total_width - 2))
+   local content_width=${max_width}
+   if [ ${content_width} -gt ${allowed_content_max} ]; then
+      content_width=${allowed_content_max}
+   fi
+   box_width=$((content_width + 2))
    
    log_setting "box_width (━ characters): ${box_width}"
-   
-   local content_width=${max_width}  # Longest prefix+text (no outer spaces)
-   
    log_setting "content_width (available for data): ${content_width}"
    
    # Draw box with heavy style
@@ -654,7 +656,7 @@ todo_show()
       local needed_width=$((item_prefix_width + text_visual_width))
       
       # Truncate if too long
-      local max_text_width=$((content_width - 2 - item_prefix_width))
+      local max_text_width=$((box_width - 1 - item_prefix_width))
       if [ ${text_visual_width} -gt ${max_text_width} ]; then
          # Rough truncation
          local keep_chars=$((max_text_width - 4))
@@ -663,13 +665,14 @@ todo_show()
          text_visual_width="${RVAL}"
       fi
       
-      local padding_right=$((max_width - (item_prefix_width + text_visual_width)))
+      local padding_right=$((box_width - (1 + item_prefix_width + text_visual_width)))
+      [ ${padding_right} -lt 0 ] && padding_right=0
       [ ${padding_right} -lt 0 ] && padding_right=0
       
       printf "%b" "${CYAN}┃${RESET} "
       printf "%b" "${GREEN}▸${RESET} ${BLUE}${item_num}.${RESET} ${item_text}"
       printf ' %.0s' $(seq 1 ${padding_right})
-      printf "%b\n" "${CYAN} ┃${RESET}"
+      printf "%b\n" "${CYAN}┃${RESET}"
    done
    
    # Show truncation info if applicable
