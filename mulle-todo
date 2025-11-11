@@ -121,68 +121,48 @@ get_todofile()
 
 calculate_visual_width()
 {
+   # Locale-independent: operate on hex of full string and step by UTF-8 sequence length
    local text="$1"
+   local hex
+   hex=$(printf '%s' "${text}" | od -An -tx1 | tr -d ' \n')
    local visual_width=0
-   local i
-   local char
-   local codepoint
-   
-   # Process each character
-   for ((i=0; i<${#text}; i++))
+   local pos=0
+   local hlen=${#hex}
+   local b1 b2 b3 codepoint
+
+   while [ ${pos} -lt ${hlen} ]
    do
-      char="${text:i:1}"
-      
-      # Get the UTF-8 byte sequence
-      local bytes=$(printf '%s' "${char}" | od -An -tx1 | tr -d ' \n')
-      
-      # Decode UTF-8 to get codepoint
-      case "${bytes}" in
-         # ASCII (1 byte): 0x00-0x7F
-         [0-7][0-9a-f])
-            visual_width=$((visual_width + 1))
-            ;;
-         
-         # 2-byte UTF-8: 0xC0-0xDF
-         c[0-9a-f][89ab][0-9a-f])
-            visual_width=$((visual_width + 1))
-            ;;
-         
-         # 3-byte UTF-8: 0xE0-0xEF (includes most emoji)
-         e[0-9a-f]*)
-            # Extract the codepoint
-            local b1="0x${bytes:0:2}"
-            local b2="0x${bytes:2:2}"
-            local b3="0x${bytes:4:2}"
-            
-            # Decode: ((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F)
-            codepoint=$(( ((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F) ))
-            
-            # Emoji ranges (most common):
-            # 0x2000-0x27BF: Dingbats, symbols
-            # 0x2B50: Star ⭐
-            # 0xFE00-0xFE0F: Variation selectors
-            if (( (codepoint >= 0x2000 && codepoint <= 0x27BF) || 
-                  (codepoint >= 0x2B00 && codepoint <= 0x2BFF) ))
-            then
-               visual_width=$((visual_width + 2))
-            else
-               visual_width=$((visual_width + 1))
-            fi
-            ;;
-         
-         # 4-byte UTF-8: 0xF0-0xF7 (emoji, special chars)
-         f[0-7]*)
-            # Most 4-byte sequences are emoji
+      b1=$((16#${hex:${pos}:2}))
+      if (( b1 < 0x80 )); then
+         visual_width=$((visual_width + 1))
+         pos=$((pos + 2))
+      elif (( b1 >= 0xC0 && b1 <= 0xDF )); then
+         # 2-byte
+         visual_width=$((visual_width + 1))
+         pos=$((pos + 4))
+      elif (( b1 >= 0xE0 && b1 <= 0xEF )); then
+         # 3-byte
+         b2=$((16#${hex:$((pos+2)):2}))
+         b3=$((16#${hex:$((pos+4)):2}))
+         codepoint=$(( ((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F) ))
+         if (( (codepoint >= 0x2300 && codepoint <= 0x24FF) ||
+               (codepoint >= 0x2600 && codepoint <= 0x27BF) ||
+               (codepoint >= 0x2B00 && codepoint <= 0x2BFF) )); then
             visual_width=$((visual_width + 2))
-            ;;
-         
-         *)
-            # Unknown, assume 1
+         else
             visual_width=$((visual_width + 1))
-            ;;
-      esac
+         fi
+         pos=$((pos + 6))
+      elif (( b1 >= 0xF0 && b1 <= 0xF7 )); then
+         # 4-byte (supplementary planes) => width 2
+         visual_width=$((visual_width + 2))
+         pos=$((pos + 8))
+      else
+         # Fallback: advance one byte
+         visual_width=$((visual_width + 1))
+         pos=$((pos + 2))
+      fi
    done
-   
    RVAL="${visual_width}"
 }
 
@@ -610,38 +590,55 @@ todo_show()
       [ ${total_width} -gt ${max_width} ] && max_width=${total_width}
    done
    
+   log_setting "data line content width (prefix+text): ${max_width}"
+   
    # Set box width
    term_width=$(tput cols 2>/dev/null || echo 80)
-   box_width=$((max_width + 4))  # Add padding
+   box_width=$((max_width + 2))  # box_width = longest content + 2 spaces
    [ ${box_width} -lt 40 ] && box_width=40
    [ ${box_width} -gt $((term_width - 4)) ] && box_width=$((term_width - 4))
    
-   local content_width=$((box_width - 2))  # Space between "┃ " and " ┃"
+   log_setting "box_width (━ characters): ${box_width}"
+   
+   local content_width=${max_width}  # Longest prefix+text (no outer spaces)
+   
+   log_setting "content_width (available for data): ${content_width}"
    
    # Draw box with heavy style
-   echo -e -n "${CYAN}┏"
+   printf "%b" "${CYAN}┏"
    printf '━%.0s' $(seq 1 ${box_width})
-   echo -e "┓${RESET}"
+   printf "%b\n" "┓${RESET}"
    
    # Title - "📋 TODO" with background pattern
    local title="📋 TODO"
    calculate_visual_width "${title}"
    local title_visual_width="${RVAL}"
-   local padding=$(( (box_width - title_visual_width) / 2 ))
-   echo -e -n "${CYAN}┃${RESET}"
-   # Left background (minus 1 for space before emoji)
-   printf "${CYAN}░%.0s${RESET}" $(seq 1 $((padding - 1)))
-   printf " "
-   echo -e -n "${YELLOW}${title}${RESET}"
-   printf " "
-   # Right background (minus 1 for space after TODO)
-   printf "${CYAN}░%.0s${RESET}" $(seq 1 $((box_width - title_visual_width - padding - 1)))
-   echo -e "${CYAN}┃${RESET}"
+   
+   log_setting "title visual width (just emoji+text): ${title_visual_width}"
+   
+   # Total needed: space + title + space  
+   local total_title_width=$((1 + title_visual_width + 1))
+   
+   log_setting "title total width (with spaces): ${total_title_width}"
+   
+   # Remaining space for background
+   local remaining=$((box_width - total_title_width))
+   local left_bg=$((remaining / 2))
+   local right_bg=$((remaining - left_bg))
+   
+   log_setting "title background: left=${left_bg}, right=${right_bg}"
+   printf "%b" "${CYAN}┃"
+   # Left background (keep color on)
+   printf "░%.0s" $(seq 1 ${left_bg})
+   printf "%b" "${RESET} ${YELLOW}${title}${RESET} ${CYAN}"
+   # Right background
+   printf "░%.0s" $(seq 1 ${right_bg})
+   printf "%b\n" "┃${RESET}"
    
    # Separator
-   echo -e -n "${CYAN}┣"
+   printf "%b" "${CYAN}┣"
    printf '━%.0s' $(seq 1 ${box_width})
-   echo -e "┫${RESET}"
+   printf "%b\n" "┫${RESET}"
    
    # Items
    for ((i=0; i<${#display_lines[@]}; i++))
@@ -657,7 +654,7 @@ todo_show()
       local needed_width=$((item_prefix_width + text_visual_width))
       
       # Truncate if too long
-      local max_text_width=$((content_width - item_prefix_width))
+      local max_text_width=$((content_width - 2 - item_prefix_width))
       if [ ${text_visual_width} -gt ${max_text_width} ]; then
          # Rough truncation
          local keep_chars=$((max_text_width - 4))
@@ -666,21 +663,21 @@ todo_show()
          text_visual_width="${RVAL}"
       fi
       
-      local padding_right=$((content_width - item_prefix_width - text_visual_width))
+      local padding_right=$((max_width - (item_prefix_width + text_visual_width)))
       [ ${padding_right} -lt 0 ] && padding_right=0
       
-      echo -e -n "${CYAN}┃${RESET} "
-      echo -e -n "${GREEN}▸${RESET} ${BLUE}${item_num}.${RESET} ${item_text}"
+      printf "%b" "${CYAN}┃${RESET} "
+      printf "%b" "${GREEN}▸${RESET} ${BLUE}${item_num}.${RESET} ${item_text}"
       printf ' %.0s' $(seq 1 ${padding_right})
-      echo -e " ${CYAN}┃${RESET}"
+      printf "%b\n" "${CYAN} ┃${RESET}"
    done
    
    # Show truncation info if applicable
    if [ -n "${limit}" ] && [ "${limit}" -lt "${count}" ]
    then
-      echo -e -n "${CYAN}┣"
+      printf "%b" "${CYAN}┣"
       printf '━%.0s' $(seq 1 ${box_width})
-      echo -e "┫${RESET}"
+      printf "%b\n" "┫${RESET}"
       
       local info_text
       if [ "${limit}" -le 3 ]; then
@@ -695,17 +692,17 @@ todo_show()
       local info_visual_len=$((${#info_text} + 3))
       local info_padding=$(( (box_width - info_visual_len) / 2 ))
       
-      echo -e -n "${CYAN}┃${RESET}"
+      printf "%b" "${CYAN}┃${RESET}"
       printf ' %.0s' $(seq 1 ${info_padding})
-      echo -e -n "${YELLOW}✨ ${info_text}${RESET}"
+      printf "%b" "${YELLOW}✨ ${info_text}${RESET}"
       printf ' %.0s' $(seq 1 $((box_width - info_visual_len - info_padding)))
-      echo -e "${CYAN}┃${RESET}"
+      printf "%b\n" "${CYAN}┃${RESET}"
    fi
    
    # Bottom border
-   echo -e -n "${CYAN}┗"
+   printf "%b" "${CYAN}┗"
    printf '━%.0s' $(seq 1 ${box_width})
-   echo -e "┛${RESET}"
+   printf "%b\n" "┛${RESET}"
 }
 
 todo_scan()
@@ -1007,6 +1004,17 @@ main()
             shift
 
             MULLE_TODO_FILE="$1"
+         ;;
+
+         --debug-string)
+            [ $# -eq 1 ] && usage "missing argument to $1"
+            shift
+
+            # Debug: calculate visual width and show hex dump
+            calculate_visual_width "$1"
+            printf "Visual width: %d\n" "${RVAL}"
+            printf "%s\n" "$1" | hexdump -C
+            exit 0
          ;;
 
          -h*|--help|help)
