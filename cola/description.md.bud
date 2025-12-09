@@ -1,5 +1,11 @@
-A simple but elegant todo list manager that displays on shell login (like motd) with beautiful Unicode box drawing, emoji support, and smart features.
+A simple but elegant todo list manager that displays on shell login
+(like motd) with beautiful Unicode box drawing, emoji support, and smart
+features.
 
+![Screenshot](screeny.png?raw=true)
+
+
+<!--
 **Key Features:**
 
 * ✨ Beautiful box-drawn interface with colors and emojis
@@ -8,3 +14,4 @@ A simple but elegant todo list manager that displays on shell login (like motd) 
 * 🚀 Shell integration - display on login like motd
 * 💾 Plain text storage - easy to backup and sync
 * 🧪 Comprehensive test suite - 41 tests covering all functionality
+-->

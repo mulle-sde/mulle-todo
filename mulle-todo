@@ -7,7 +7,7 @@
 #
 #  Copyright (c) 2025 Nat! - Mulle kybernetiK
 #  All rights reserved.
-#
+#  Heartlessly vibecoded from start to finish.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are met:
@@ -44,7 +44,7 @@
 #
 # Versioning of this script
 #
-MULLE_EXECUTABLE_VERSION="0.0.0"
+MULLE_EXECUTABLE_VERSION="0.1.0"
 
 
 ### >> START OF mulle-bashfunctions-embed.sh >>

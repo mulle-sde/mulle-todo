@@ -1,9 +1,15 @@
-# 📋 Beautiful todo list manager for shell environments
+# 📋 A Todo list manager for shell environments
 
 ... for Android, BSDs, Linux, macOS, SunOS, Windows (MinGW, WSL)
 
-A simple but elegant todo list manager that displays on shell login (like motd) with beautiful Unicode box drawing, emoji support, and smart features.
+A simple but elegant todo list manager that displays on shell login
+(like motd) with beautiful Unicode box drawing, emoji support, and smart
+features.
 
+![Screenshot](screeny.png?raw=true)
+
+
+<!--
 **Key Features:**
 
 * ✨ Beautiful box-drawn interface with colors and emojis
@@ -12,10 +18,10 @@ A simple but elegant todo list manager that displays on shell login (like motd) 
 * 🚀 Shell integration - display on login like motd
 * 💾 Plain text storage - easy to backup and sync
 * 🧪 Comprehensive test suite - 41 tests covering all functionality
-
+-->
 | Release Version                                       | Release Notes
 |-------------------------------------------------------|--------------
-| ![Mulle kybernetiK tag](https://img.shields.io/github/tag/mulle-nat/mulle-todo.svg)  | [RELEASENOTES](RELEASENOTES.md) |
+| ![Mulle kybernetiK tag](https://img.shields.io/github/tag/mulle-sde/mulle-todo.svg)  | [RELEASENOTES](RELEASENOTES.md) |
 
 
 
