@@ -204,3 +204,4 @@ sudo chmod +x /usr/local/bin/mulle-todo
 [Nat!](https://mulle-kybernetik.com/weblog) for Mulle kybernetiK
 
 
+![footer](https://www.mulle-kybernetik.com/pix/heartlessly-vibecoded.png)

@@ -54,7 +54,7 @@ print_flags()
 {
    echo "   -f            : force operation"
    echo "   --file <path> : Use custom todo file (default: ~/.mulle/etc/todo/todo.txt)"
-
+   echo "   --here        : Use custom todo file \$PWD/.mulle/etc/todo/todo.txt"
 
    options_technical_flags_usage "         : "
 }
@@ -1089,6 +1089,10 @@ main()
 
          -g|--global)
             MULLE_TODO_GLOBAL='YES'
+         ;;
+
+         --here)
+            MULLE_TODO_FILE='.mulle/etc/todo/todo.txt'
          ;;
 
          --file)
