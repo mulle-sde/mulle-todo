@@ -1,0 +1,33 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install mulle-bashfunctions
+      run: |
+        curl -L 'https://github.com/mulle-nat/mulle-bashfunctions/archive/latest.tar.gz' | tar xfz -
+        cd mulle-bashfunctions-latest
+        sudo ./bin/installer /usr/local
+    
+    - name: Build mulle-todo
+      run: make
+    
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./mulle-todo
+        asset_name: mulle-todo
+        asset_content_type: application/octet-stream
