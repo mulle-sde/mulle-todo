@@ -77,49 +77,6 @@ mulle-todo --file ~/work-todos.txt add "Finish project"
 mulle-todo --file ~/personal-todos.txt add "Buy groceries"
 ```
 
-## Shell Integration
-
-### Quick Install (Recommended)
-
-The easiest way to set up shell integration is to use the built-in installer:
-
-```bash
-mulle-todo install-shell-integration
-```
-
-This will automatically:
-- Detect your shell (bash/zsh) and platform (Linux/macOS)
-- Add the integration code to the appropriate file (~/.bashrc, ~/.zshrc, or ~/.bash_profile)
-- Create a backup of your existing shell configuration
-- Display todos on every new shell session (limited to 8 items)
-
-### Manual Setup
-
-If you prefer to set it up manually, add this to your `~/.bashrc` or `~/.zshrc`:
-
-```bash
-# Display todo list on login (limit to 8 items)
-if command -v mulle-todo >/dev/null 2>&1; then
-    mulle-todo show 8
-fi
-```
-
-Or for a more compact version without the decorative lines:
-
-```bash
-# Display todo list on login (limit to 10 items)
-if command -v mulle-todo >/dev/null 2>&1; then
-    mulle-todo list 10 2>/dev/null
-fi
-```
-
-You can also source the provided `shell-integration.sh` file:
-
-```bash
-# Add to ~/.bashrc or ~/.zshrc
-source /path/to/mulle-todo/shell-integration.sh
-```
-
 ## Smart Truncation
 
 When you have more todos than the display limit, `mulle-todo` uses a smart algorithm:
