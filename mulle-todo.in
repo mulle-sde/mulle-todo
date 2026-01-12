@@ -44,7 +44,7 @@
 #
 # Versioning of this script
 #
-MULLE_EXECUTABLE_VERSION="0.1.0"
+MULLE_EXECUTABLE_VERSION="0.2.0"
 
 
 ### >> START OF mulle-bashfunctions-embed.sh >>
