@@ -1,6 +1,6 @@
 cmake_minimum_required( VERSION 3.15...99.99)
 
-project( mulle-todo VERSION 0.2.0 LANGUAGES NONE)
+project( mulle-todo VERSION 0.2.1 LANGUAGES NONE)
 
 #
 # Primarily used for packaging on Linux
