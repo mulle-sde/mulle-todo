@@ -1,0 +1,5846 @@
+#! /bin/sh
+#! MULLE_BASHFUNCTIONS_VERSION=6.6.3
+# shellcheck shell=bash
+#
+#
+#  mulle-todo.sh
+#
+#  Copyright (c) 2025 Nat! - Mulle kybernetiK
+#  All rights reserved.
+#  Heartlessly vibecoded from start to finish.
+#
+#  Redistribution and use in source and binary forms, with or without
+#  modification, are permitted provided that the following conditions are met:
+#
+#  Redistributions of source code must retain the above copyright notice, this
+#  list of conditions and the following disclaimer.
+#
+#  Redistributions in binary form must reproduce the above copyright notice,
+#  this list of conditions and the following disclaimer in the documentation
+#  and/or other materials provided with the distribution.
+#
+#  Neither the name of <ORGANIZATION> nor the names of its contributors
+#  may be used to endorse or promote products derived from this software
+#  without specific prior written permission.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+#  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+#  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+#  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+#  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+#  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+#  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+#  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+#  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+#  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+#  POSSIBILITY OF SUCH DAMAGE.
+#
+
+[ "${TRACE}" = 'YES' -o "${MULLE_TODO_TRACE}" = 'YES' ] && set -x  && : "$0" "$@"
+
+### >> START OF mulle-boot.sh >>
+# shellcheck shell=bash
+# shellcheck disable=SC2236
+# shellcheck disable=SC2166
+# shellcheck disable=SC2006
+#
+# Prelude to be placed at top of each script. Rerun this script either in
+# bash or zsh, if not already running in either (which can happen!)
+# Allows script to run on systems that either have bash (linux) or
+# zsh (macOS) only by default.
+#
+if [ "${1:-}" != --no-auto-shell ]
+then
+   _MULLE_UNAME="`uname`"
+   case "${_MULLE_UNAME}" in
+      [Dd]arwin)
+         [ -z "${ZSH_VERSION+x}" ]
+      ;;
+
+      *)
+         [ -z "${BASH_VERSION+x}" -a -z "${ZSH_VERSION+x}" ]
+      ;;
+   esac
+
+   if [ $? -eq 0 ]
+   then
+      exe_shell=
+      if [ ! -z "${MULLE_BASH_EXE_SHELL}" ]
+      then
+         if ! exe_shell="`command -v "${MULLE_BASH_EXE_SHELL}"`"
+         then
+            if [ "${MULLE_BASH_EXE_SHELL_STRICT}" = 'YES' ]
+            then
+               echo "Desired MULLE_BASH_EXE_SHELL \"${MULLE_BASH_EXE_SHELL}\" not found" >&2
+               exit 1
+            fi
+         fi
+      fi
+      if [ -z "${exe_shell}" ]
+      then
+         case "${_MULLE_UNAME}" in
+            [Dd]arwin)
+               exe_shell="`command -v "zsh" `"
+               exe_shell="${exe_shell:-zsh}" # for error if not installed
+            ;;
+
+            *)
+               exe_shell="`command -v "bash" `"
+               exe_shell="${exe_shell:-`command -v "zsh" `}"
+               exe_shell="${exe_shell:-bash}" # for error if not installed
+            ;;
+         esac
+      fi
+      script="$0"
+
+      #
+      # Quote incoming arguments for shell expansion
+      #
+      args=""
+      for arg in "$@"
+      do
+         # True bourne sh doesn't know ${a//b/c} and <<<
+         case "${arg}" in
+            *\'*)
+               # Use cat instead of echo to avoid possible echo -n
+               # problems. Escape single quotes in string.
+               arg="`cat <<EOF | sed -e s/\'/\'\\\"\'\\\"\'/g
+${arg}
+EOF
+`"
+            ;;
+         esac
+         if [ -z "${args}" ]
+         then
+            args="'${arg}'"
+         else
+            args="${args} '${arg}'"
+         fi
+      done
+
+      #
+      # bash/zsh will use arg after -c <arg> as $0, convenient!
+      #
+      exec "${exe_shell}" -c ". ${script} --no-auto-shell ${args}" "${script}"
+   fi
+else
+   shift  # get rid of --no-auto-shell
+fi
+
+if [ ! -z "${POSIXLY_CORRECT+x}" ]
+then
+   set +o posix  # turn off posix
+fi
+
+#
+# leading backslash ? looks like we're getting called from
+# mingw via a .BAT or so. Correct this now
+#
+case "$PATH" in
+   "\\"*)
+      PATH="${PATH//\\/\/}"
+   ;;
+esac
+
+### << END OF mulle-boot.sh <<
+
+#
+# Versioning of this script
+#
+MULLE_EXECUTABLE_VERSION="0.2.0"
+
+
+### >> START OF mulle-bashfunctions-embed.sh >>
+#
+#   Copyright (c) 2015-2023 Nat! - Mulle kybernetiK
+#   All rights reserved.
+#
+#   Redistribution and use in source and binary forms, with or without
+#   modification, are permitted provided that the following conditions are met:
+#
+#   Redistributions of source code must retain the above copyright notice, this
+#   list of conditions and the following disclaimer.
+#
+#   Redistributions in binary form must reproduce the above copyright notice,
+#   this list of conditions and the following disclaimer in the documentation
+#   and/or other materials provided with the distribution.
+#
+#   Neither the name of Mulle kybernetiK nor the names of its contributors
+#   may be used to endorse or promote products derived from this software
+#   without specific prior written permission.
+#
+#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+#   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+#   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+#   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+#   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+#   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+#   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+#   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+#   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+#   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+#
+
+if ! [ ${MULLE_BASHGLOBAL_SH+x} ]
+then
+   MULLE_BASHGLOBAL_SH='included'
+
+   DEFAULT_IFS="${IFS}" # as early as possible
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+     setopt sh_word_split
+     setopt POSIX_ARGZERO
+     set -o GLOB_SUBST        # neede for [[ $i == $pattern ]]
+   fi
+
+   if [ -z "${MULLE_EXECUTABLE:-}" ]
+   then
+      MULLE_EXECUTABLE="${BASH_SOURCE[0]:-${(%):-%x}}"
+      case "${MULLE_EXECUTABLE##*/}" in 
+         mulle-bash*.sh)
+            MULLE_EXECUTABLE="$0"
+         ;;
+      esac
+   fi
+
+   case "${MULLE_EXECUTABLE##*/}" in 
+      mulle-bash*.sh)
+         echo "MULLE_EXECUTABLE fail" >&2
+         exit 1
+      ;;
+   esac
+
+
+   if [ -z "${MULLE_EXECUTABLE_NAME:-}" ]
+   then
+      MULLE_EXECUTABLE_NAME="${MULLE_EXECUTABLE##*/}"
+   fi
+
+   if [ -z "${MULLE_USER_PWD:-}" ]
+   then
+      MULLE_USER_PWD="${PWD}"
+      export MULLE_USER_PWD
+   fi
+
+   MULLE_USAGE_NAME="${MULLE_USAGE_NAME:-${MULLE_EXECUTABLE_NAME}}"
+
+   MULLE_EXECUTABLE_PWD="${PWD}"
+   MULLE_EXECUTABLE_FAIL_PREFIX="${MULLE_EXECUTABLE_NAME}"
+   MULLE_EXECUTABLE_PID="$$"
+
+   if [ -z "${MULLE_UNAME:-}" ]
+   then
+      case "${BASH_VERSION:-}" in
+         [0123]*)
+            MULLE_UNAME="`uname | tr '[:upper:]' '[:lower:]'`"
+         ;;
+
+         *)
+            MULLE_UNAME="${_MULLE_UNAME:-`uname`}"
+            if [ ${ZSH_VERSION+x} ]
+            then
+               MULLE_UNAME="${MULLE_UNAME:l}"
+            else
+               MULLE_UNAME="${MULLE_UNAME,,}"
+            fi
+         ;;
+      esac
+      
+      MULLE_UNAME="${MULLE_UNAME%%_*}"
+      MULLE_UNAME="${MULLE_UNAME%[36][24]}" # remove 32 64 (hax)
+
+      case "${MULLE_UNAME}" in 
+         linux)
+            MULLE_UNAME="android"
+            if [ -r /proc/sys/kernel/osrelease ]
+            then
+               read -r MULLE_UNAME < /proc/sys/kernel/osrelease
+               case "${MULLE_UNAME}" in
+                  *-[Mm]icrosoft-*)
+                     MULLE_UNAME="windows" # wsl2, this is super slow on NTFS
+                  ;;
+
+                  *-[Mm]icrosoft)
+                     MULLE_UNAME="windows" # wsl1
+                  ;;
+
+                  *-android-*|*-android)
+                     MULLE_UNAME="android"
+                  ;;
+
+                  *)
+                     MULLE_UNAME="linux"
+                  ;;
+               esac
+            fi
+         ;;
+
+         msys|cygwin)
+            MULLE_UNAME='msys'
+         ;;
+      esac
+   fi
+
+   if [ "${MULLE_UNAME}" = "windows" ]
+   then
+      MULLE_EXE_EXTENSION=".exe"
+   fi
+
+   if [ -z "${MULLE_HOSTNAME:-}" ]
+   then
+      MULLE_HOSTNAME="${HOSTNAME}"
+      case "${MULLE_UNAME}" in
+         'mingw'|'msys'|'sunos')
+            MULLE_HOSTNAME="${MULLE_HOSTNAME:-`hostname 2> /dev/null`}"
+         ;;
+
+         *) # on AARCH hostname does not exist anymore (sigh)
+            MULLE_HOSTNAME="${MULLE_HOSTNAME:-`hostname -s 2> /dev/null`}"
+         ;;
+      esac
+      MULLE_HOSTNAME="${MULLE_HOSTNAME:-`grep -E -v '^#' "/etc/hostname" 2> /dev/null`}"
+      MULLE_HOSTNAME="${MULLE_HOSTNAME:-nautilus}"
+
+      case "${MULLE_HOSTNAME}" in
+         \.*)
+            MULLE_HOSTNAME="_${MULLE_HOSTNAME}"
+         ;;
+      esac
+   fi
+
+   if [ -z "${MULLE_USERNAME:-}" ]
+   then
+      MULLE_USERNAME="${MULLE_USERNAME:-${USERNAME}}" # mingw
+      MULLE_USERNAME="${MULLE_USERNAME:-${USER}}"
+      MULLE_USERNAME="${MULLE_USERNAME:-${LOGNAME}}"
+      MULLE_USERNAME="${MULLE_USERNAME:-`id -nu 2> /dev/null`}"
+      MULLE_USERNAME="${MULLE_USERNAME:-cptnemo}"
+   fi
+fi
+if ! [ ${MULLE_COMPATIBILITY_SH+x} ]
+then
+MULLE_COMPATIBILITY_SH='included'
+
+
+function shell_enable_pipefail()
+{
+   set -o pipefail
+}
+
+
+function shell_disable_pipefail()
+{
+   set +o pipefail
+}
+
+
+function shell_is_pipefail_enabled()
+{
+   case "$-" in
+      *f*)
+         return 1
+      ;;
+   esac
+   return 0
+}
+
+
+function shell_enable_extglob()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      setopt kshglob
+      setopt bareglobqual
+   else
+      shopt -s extglob
+   fi
+}
+
+
+function shell_disable_extglob()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      unsetopt bareglobqual
+      unsetopt kshglob
+   else
+      shopt -u extglob
+   fi
+}
+
+
+function shell_is_extglob_enabled()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      [[ -o kshglob ]]
+      return $?
+   fi
+
+   shopt -q extglob
+}
+
+
+function shell_enable_nullglob()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      setopt nullglob
+   else
+      shopt -s nullglob
+   fi
+}
+
+
+function shell_disable_nullglob()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      unsetopt nullglob
+   else
+      shopt -u nullglob
+   fi
+}
+
+
+function shell_is_nullglob_enabled()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      [[ -o nullglob ]]
+      return $?
+   fi
+   shopt -q nullglob
+}
+
+
+function shell_enable_glob()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      unsetopt noglob
+   else
+      set +f
+   fi
+}
+
+
+function shell_disable_glob()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      setopt noglob
+   else
+      set -f
+   fi
+}
+
+
+function shell_is_glob_enabled()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      if [[ -o noglob ]]
+      then
+         return 1
+      fi
+      return 0
+   fi
+
+   case "$-" in
+      *f*)
+         return 1
+      ;;
+   esac
+   return 0
+}
+
+
+function shell_is_function()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      case "`type "$1" `" in
+         *function*)
+            return 0
+         ;;
+      esac
+      return 1
+   fi
+
+   [ "`type -t "$1"`" = "function" ]
+   return $?
+}
+
+
+function shell_is_builtin_command()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      case "`LC_C=C whence -w "$1" `" in
+         *:*builtin)
+            return 0
+         ;;
+      esac
+      return 1
+   fi
+
+   [ "`type -t "$1"`" = "builtin" ]
+   return $?
+}
+
+
+function r_shell_indirect_expand()
+{
+   local key="$1"
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      RVAL="${(P)key}"
+   else
+      RVAL="${!key}"
+   fi
+}
+
+function shell_is_variable_defined()
+{
+   local key="$1"
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      [[ -n ${(P)key} ]]
+      return $?
+   fi
+   [ "${!key}" ]
+}
+
+
+unalias -a
+
+if [ ${ZSH_VERSION+x} ]
+then
+   setopt aliases
+
+   alias .for="setopt noglob; for"
+   alias .foreachline="setopt noglob; IFS=$'\n'; for"
+   alias .foreachword="setopt noglob; IFS=' '$'\t'$'\n'; for"
+   alias .foreachitem="setopt noglob; IFS=','; for"
+   alias .foreachpath="setopt noglob; IFS=':'; for"
+   alias .foreachpathcomponent="set -f; IFS='/'; for"
+   alias .foreachcolumn="setopt noglob; IFS=';'; for"
+   alias .foreachfile="unsetopt noglob; setopt nullglob; IFS=' '$'\t'$'\n'; for"
+   alias .do="do
+   unsetopt noglob; unsetopt nullglob; IFS=' '$'\t'$'\n'"
+   alias .done="done;unsetopt noglob; unsetopt nullglob; IFS=' '$'\t'$'\n'"
+
+else
+   shopt -s expand_aliases
+
+   alias .for="set -f; for"
+   alias .foreachline="set -f; IFS=$'\n'; for"
+   alias .foreachword="set -f; IFS=' '$'\t'$'\n'; for"
+   alias .foreachitem="set -f; IFS=','; for"
+   alias .foreachpath="set -f; IFS=':'; for"
+   alias .foreachpathcomponent="set -f; IFS='/'; for"
+   alias .foreachcolumn="set -f; IFS=';'; for"
+   alias .foreachfile="set +f; shopt -s nullglob; IFS=' '$'\t'$'\n'; for"
+   alias .do="do
+set +f; shopt -u nullglob; IFS=' '$'\t'$'\n'"
+   alias .done="done;set +f; shopt -u nullglob; IFS=' '$'\t'$'\n'"
+fi
+
+
+alias .break="break"
+alias .continue="continue"
+
+
+shell_enable_extglob
+shell_enable_pipefail
+
+fi
+:
+if ! [ ${MULLE_LOGGING_SH+x} ]
+then
+MULLE_LOGGING_SH='included'
+
+
+
+_log_printf()
+{
+   local format="$1" ; shift
+
+
+   if [ -z "${MULLE_EXEKUTOR_LOG_DEVICE:-}" ]
+   then
+      printf "${format}" "$@" >&2
+   else
+      printf "${format}" "$@" > "${MULLE_EXEKUTOR_LOG_DEVICE}"
+   fi
+}
+
+
+MULLE_LOG_ERROR_PREFIX=" error: "
+MULLE_LOG_FAIL_ERROR_PREFIX=" fatal error: "
+
+_log_error()
+{
+   if [ "${MULLE_FLAG_LOG_ERROR:-YES}" = 'NO' ]
+   then
+      return
+   fi
+   _log_printf "${C_ERROR}${MULLE_EXECUTABLE_FAIL_PREFIX}${MULLE_LOG_ERROR_PREFIX}${C_ERROR_TEXT}%b${C_RESET}\n" "$*"
+}
+
+
+
+_log_fail()
+{
+   if [ "${MULLE_FLAG_LOG_ERROR:-YES}" = 'NO' ]
+   then
+      return
+   fi
+   _log_printf "${C_ERROR}${MULLE_EXECUTABLE_FAIL_PREFIX}${MULLE_LOG_FAIL_ERROR_PREFIX}${C_ERROR_TEXT}%b${C_RESET}\n" "$*"
+}
+
+
+_log_warning()
+{
+   if [ "${MULLE_FLAG_LOG_TERSE:-}" != 'YES' ]
+   then
+      _log_printf "${C_WARNING}%b${C_RESET}\n" "$*"
+   fi
+}
+
+
+_log_info()
+{
+   if ! [ "${MULLE_FLAG_LOG_TERSE:-}" = 'YES' -o "${MULLE_FLAG_LOG_TERSE:-}" = 'WARN' ]
+   then
+      _log_printf "${C_INFO}%b${C_RESET}\n" "$*"
+   fi
+}
+
+
+_log_vibe()
+{
+   if [ "${MULLE_VIBECODING:-}" = 'YES' ]
+   then
+      _log_info "$*"
+   else
+      _log_verbose "${*//${C_VIBE}/${C_VERBOSE}}"
+   fi
+}
+
+
+_log_verbose()
+{
+   if [ "${MULLE_FLAG_LOG_VERBOSE:-}" = 'YES' ]
+   then
+      _log_printf "${C_VERBOSE}%b${C_RESET}\n" "$*"
+   fi
+}
+
+
+_log_fluff()
+{
+   if [ "${MULLE_FLAG_LOG_FLUFF:-}" = 'YES' ]
+   then
+      _log_printf "${C_FLUFF}%b${C_RESET}\n" "$*"
+   else
+      _log_debug "$@"
+   fi
+}
+
+
+_log_setting()
+{
+   if [ "${MULLE_FLAG_LOG_SETTINGS:-}" = 'YES' ]
+   then
+      _log_printf "${C_SETTING}%b${C_RESET}\n" "$*"
+   fi
+}
+
+
+_log_debug()
+{
+   if [ "${MULLE_FLAG_LOG_DEBUG:-}" != 'YES' ]
+   then
+      return
+   fi
+
+   case "${MULLE_UNAME}" in
+      'linux'|'windows')
+         _log_printf "${C_DEBUG}$(date "+%s.%N") %b${C_RESET}\n" "$*"
+      ;;
+
+      *)
+         _log_printf "${C_DEBUG}$(date "+%s") %b${C_RESET}\n" "$*"
+      ;;
+   esac
+}
+
+
+
+_log_entry()
+{
+   if [ "${MULLE_FLAG_LOG_DEBUG:-}" != 'YES' ]
+   then
+      return
+   fi
+
+   local functionname="$1" ; shift
+
+   local args
+   local truncate
+
+   if [ $# -ne 0 ]
+   then
+      functionname="${functionname} " # add space for later
+
+      truncate="$1"
+      if [ "${#truncate}" -gt 200 ]
+      then
+         truncate="${truncate:0:197}..."
+      fi
+      args="'${truncate}'"
+      shift
+   fi
+
+   while [ $# -ne 0 ]
+   do
+      truncate="$1"
+      if [ "${#truncate}" -gt 200 ]
+      then
+         truncate="${truncate:0:197}..."
+      fi
+      args="${args}, '${truncate}'"
+      shift
+   done
+
+   case "${MULLE_UNAME}" in
+      'linux'|'windows')
+         _log_printf "${C_DEBUG}$(date "+%s.%N") %s%s${C_RESET}\n" "${functionname}" "${args}"
+      ;;
+
+      *)
+         _log_printf "${C_DEBUG}$(date "+%s") %s%s${C_RESET}\n" "${functionname}" "${args}"
+      ;;
+   esac
+}
+
+
+_log_trace()
+{
+   case "${MULLE_UNAME}" in
+      linux)
+         _log_printf "${C_TRACE}$(date "+%s.%N") %b${C_RESET}\n" "$*"
+         ;;
+
+      *)
+         _log_printf "${C_TRACE}$(date "+%s") %b${C_RESET}\n" "$*"
+      ;;
+   esac
+}
+
+
+alias log_debug='_log_debug'
+
+alias log_entry='_log_entry'
+
+alias log_error='_log_error'
+
+alias log_fluff='_log_fluff'
+
+alias log_info='_log_info'
+
+alias log_vibe='_log_vibe'
+
+
+alias log_setting='_log_setting'
+
+alias log_trace='_log_trace'
+
+alias log_verbose='_log_verbose'
+
+alias log_warning='_log_warning'
+
+
+log_set_trace_level()
+{
+   alias log_debug='_log_debug'
+   alias log_entry='_log_entry'
+   alias log_error='_log_error'
+   alias log_fluff='_log_fluff'
+   alias log_info='_log_info'
+   alias log_vibe='_log_vibe'
+   alias log_setting='_log_setting'
+   alias log_trace='_log_trace'
+   alias log_verbose='_log_verbose'
+   alias log_warning='_log_warning'
+
+   if [ "${MULLE_FLAG_LOG_DEBUG:-}" != 'YES' ]
+   then
+      alias log_entry=': #'
+      alias log_debug=': #'
+   fi
+
+   if [ "${MULLE_FLAG_LOG_SETTINGS:-}" != 'YES' ]
+   then
+      alias log_setting=': #'
+   fi
+
+   if [ "${MULLE_FLAG_LOG_FLUFF:-}" != 'YES' ]
+   then
+      if [ "${MULLE_FLAG_LOG_DEBUG:-}" = 'YES' ]
+      then
+         alias log_fluff='log_debug'
+      else
+         alias log_fluff=': #'
+      fi
+   fi
+
+   if [ "${MULLE_FLAG_LOG_VERBOSE:-}" != 'YES' ]
+   then
+      alias log_verbose=': #'
+   fi
+
+   if [ "${MULLE_FLAG_LOG_TERSE:-}" = 'YES' -o "${MULLE_FLAG_LOG_TERSE:-}" = 'WARN' ]
+   then
+      alias log_info=': #'
+      alias log_vibe=': #'
+   fi
+
+   if [ "${MULLE_FLAG_LOG_TERSE:-}" = 'YES' ]
+   then
+      alias log_warning=': #'
+   fi
+   :
+}
+
+
+
+if [ ${ZSH_VERSION+x} ]
+then
+   function caller()
+   ( # sic!
+      local i="${1:-1}"
+
+      set +u
+      i=$((i+1))
+      local file=${funcfiletrace[$((i))]%:*}
+      local line=${funcfiletrace[$((i))]##*:}
+      local func=${funcstack[$((i + 1))]}
+
+      if [ -z "${func## }" ]
+      then
+         return 1
+      fi
+
+      printf "%s %s %s\n" "$line" "$func" "${file##*/}"
+      return 0
+   ) # sic!
+fi
+
+
+stacktrace()
+{
+   case "$-" in
+      *x*)
+         return
+      ;;
+   esac
+
+   local i
+   local line
+   local max
+
+   i=1
+   max=100
+
+   while line="`caller $i`"
+   do
+      _log_printf "${C_CYAN}%b${C_RESET}\n" "$i: #${line}"
+      i=$((i + 1))
+      [ $i -gt $max ] && break
+   done
+}
+
+
+function fail()
+{
+   if [ ! -z "$*" ]
+   then
+      _log_fail "$@"
+   fi
+
+   if [ "${MULLE_FLAG_LOG_DEBUG:-}" = 'YES' ]
+   then
+      stacktrace
+   fi
+
+   exit 1
+}
+
+
+MULLE_INTERNAL_ERROR_PREFIX=" *** internal error ***:"
+
+
+function _internal_fail()
+{
+   _log_printf "${C_ERROR}${MULLE_EXECUTABLE_FAIL_PREFIX}${MULLE_INTERNAL_ERROR_PREFIX}${C_ERROR_TEXT}%b${C_RESET}\n" "$*"
+   stacktrace
+   exit 1
+}
+
+
+_fatal()
+{
+   _internal_fail "$@"
+}
+
+
+logging_reset()
+{
+   printf "%b" "${C_RESET}" >&2
+}
+
+
+logging_trap_install()
+{
+   trap 'logging_reset ; exit 1' TERM INT
+}
+
+
+logging_trap_uninstall()
+{
+   trap - TERM INT
+}
+
+
+logging_initialize_color()
+{
+
+   case "${TERM:-}" in
+      dumb)
+         MULLE_NO_COLOR='YES'
+      ;;
+   esac
+
+   if [ -z "${NO_COLOR:-}" -a "${MULLE_NO_COLOR:-}" != 'YES' ] && [ ! -f /dev/stderr ]
+   then
+      C_RESET="\033[0m"
+
+      C_RED="\033[0;31m"     C_GREEN="\033[0;32m"
+      C_BLUE="\033[0;34m"    C_MAGENTA="\033[0;35m"
+      C_CYAN="\033[0;36m"
+
+      C_BR_RED="\033[0;91m"
+      C_BR_GREEN="\033[0;92m"
+      C_BR_BLUE="\033[0;94m"
+      C_BR_CYAN="\033[0;96m"
+      C_BR_MAGENTA="\033[0;95m"
+      C_BOLD="\033[1m"
+      C_FAINT="\033[2m"
+      C_UNDERLINE="\033[4m"
+      C_SPECIAL_BLUE="\033[38;5;39;40m"
+
+      if [ "${MULLE_LOGGING_TRAP:-}" != 'NO' ]
+      then
+         logging_trap_install
+      fi
+   fi
+
+   C_RESET_BOLD="${C_RESET}${C_BOLD}"
+
+   C_DEBUG="${C_SPECIAL_BLUE}"
+   C_ERROR="${C_BR_RED}${C_BOLD}"
+   C_FLUFF="${C_GREEN}${C_BOLD}"
+   C_INFO="${C_CYAN}${C_BOLD}"
+   C_SETTING="${C_GREEN}${C_FAINT}"
+   C_TRACE2="${C_RESET}${C_FAINT}"
+   C_TRACE="${C_FLUFF}${C_FAINT}"
+   C_VERBOSE="${C_GREEN}${C_BOLD}"
+   C_WARNING="${C_RED}${C_BOLD}"
+
+   C_VIBE="${C_INFO}"
+
+   C_ERROR_TEXT="${C_RESET}${C_BR_RED}${C_BOLD}"
+}
+
+
+logging_deinitialize_color()
+{
+   C_RESET=
+
+   C_RED=
+   C_GREEN=
+   C_BLUE=
+   C_MAGENTA=
+   C_CYAN=
+
+   C_BR_RED=
+   C_BR_GREEN=
+   C_BR_BLUE=
+   C_BR_CYAN=
+   C_BR_MAGENTA=
+   C_BOLD=
+   C_FAINT=
+   C_UNDERLINE=
+   C_SPECIAL_BLUE=
+
+   if [ "${MULLE_LOGGING_TRAP:-}" != 'NO' ]
+   then
+      logging_trap_uninstall
+   fi
+
+   C_RESET_BOLD="${C_RESET}${C_BOLD}"
+
+   C_DEBUG="${C_SPECIAL_BLUE}"
+   C_ERROR="${C_BR_RED}${C_BOLD}"
+   C_FLUFF="${C_GREEN}${C_BOLD}"
+   C_INFO="${C_CYAN}${C_BOLD}"
+   C_SETTING="${C_GREEN}${C_FAINT}"
+   C_TRACE2="${C_RESET}${C_FAINT}"
+   C_TRACE="${C_FLUFF}${C_FAINT}"
+   C_VERBOSE="${C_GREEN}${C_BOLD}"
+   C_WARNING="${C_RED}${C_BOLD}"
+
+   C_VIBE="${C_INFO}"
+
+   C_ERROR_TEXT="${C_RESET}${C_BR_RED}${C_BOLD}"
+}
+
+
+logging_initialize()
+{
+   logging_initialize_color
+}
+
+
+logging_initialize "$@"
+
+fi
+:
+if ! [ ${MULLE_EXEKUTOR_SH+x} ]
+then
+MULLE_EXEKUTOR_SH='included'
+
+[ -z "${MULLE_LOGGING_SH}" ] && \
+   echo "mulle-logging.sh must be included before mulle-exekutor.sh" 2>&1 && exit 1
+
+
+
+exekutor_print_arrow()
+{
+   local arrow
+
+   [ -z "${MULLE_EXECUTABLE_PID}" ] && _internal_fail "MULLE_EXECUTABLE_PID not set"
+
+   local pid
+
+   pid="${BASHPID:-$$}"
+
+   if [ -z "${MULLE_EXEKUTOR_LOG_DEVICE:-}"  \
+        -a ${pid} -ne 0 \
+        -a "${MULLE_EXECUTABLE_PID}" != "${pid}" ]
+   then
+      arrow="=[${pid}]=>"
+   else
+      arrow="==>"
+   fi
+
+   printf "%s" "${arrow}"
+}
+
+
+exekutor_print()
+{
+   exekutor_print_arrow
+
+   local escaped
+
+   while [ $# -ne 0 ]
+   do
+      case "$1" in
+         *[^a-zA-Z0-9._-]*|"")
+            escaped="${1//\'/\'\"\'\"\'}"
+            printf "%.240s" " '${escaped}'"
+         ;;
+
+         *)
+            printf "%.240s" " $1"
+         ;;
+      esac
+      shift
+   done
+   printf '\n'
+}
+
+
+eval_exekutor_print()
+{
+   exekutor_print_arrow
+
+   local escaped
+
+   while [ $# -ne 0 ]
+   do
+      printf " %s" "$1"  # what was the point of that ?
+      shift
+   done
+   printf '\n'
+}
+
+
+_exekutor_trace()
+{
+   local printer="$1"; shift
+
+   if [ -z "${MULLE_EXEKUTOR_LOG_DEVICE:-}" ]
+   then
+      ${printer} "$@" >&2
+   else
+      ${printer} "$@" > "${MULLE_EXEKUTOR_LOG_DEVICE}"
+   fi
+}
+
+
+exekutor_trace()
+{
+   local printer="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      if [ -z "${MULLE_EXEKUTOR_LOG_DEVICE:-}" ]
+      then
+         ${printer} "$@" >&2
+      else
+         ${printer} "$@" > "${MULLE_EXEKUTOR_LOG_DEVICE}"
+      fi
+   fi
+}
+
+
+_exekutor_trace_output()
+{
+   local printer="$1"; shift
+   local redirect="$1"; shift
+   local output="$1"; shift
+
+   if [ -z "${MULLE_EXEKUTOR_LOG_DEVICE:-}" ]
+   then
+      ${printer} "$@" "${redirect}" "${output}" >&2
+   else
+      ${printer} "$@" "${redirect}" "${output}" > "${MULLE_EXEKUTOR_LOG_DEVICE}"
+   fi
+}
+
+
+exekutor_trace_output()
+{
+   local printer="$1"; shift
+   local redirect="$1"; shift
+   local output="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      if [ -z "${MULLE_EXEKUTOR_LOG_DEVICE:-}" ]
+      then
+         ${printer} "$@" "${redirect}" "${output}" >&2
+      else
+         ${printer} "$@" "${redirect}" "${output}" > "${MULLE_EXEKUTOR_LOG_DEVICE}"
+      fi
+   fi
+}
+
+function exekutor()
+{
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      _exekutor_trace "exekutor_print" "$@"
+   fi
+
+   if [ "${MULLE_FLAG_EXEKUTOR_DRY_RUN:-}" = 'YES' ]
+   then
+      return
+   fi
+
+   "$@"
+   MULLE_EXEKUTOR_RVAL=$?
+
+   [ "${MULLE_EXEKUTOR_RVAL}" = "${MULLE_EXEKUTOR_STRACKTRACE_RVAL:-127}" ] && stacktrace
+
+   return ${MULLE_EXEKUTOR_RVAL}
+}
+
+
+function rexekutor()
+{
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      _exekutor_trace "exekutor_print" "$@"
+   fi
+
+   "$@"
+   MULLE_EXEKUTOR_RVAL=$?
+
+   [ "${MULLE_EXEKUTOR_RVAL}" = "${MULLE_EXEKUTOR_STRACKTRACE_RVAL:-127}" ] && stacktrace
+
+   return ${MULLE_EXEKUTOR_RVAL}
+}
+
+
+function eval_exekutor()
+{
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      _exekutor_trace "eval_exekutor_print" "$@"
+   fi
+
+   if [ "${MULLE_FLAG_EXEKUTOR_DRY_RUN:-}" = 'YES' ]
+   then
+      return
+   fi
+
+   eval "$@"
+   MULLE_EXEKUTOR_RVAL=$?
+
+   [ "${MULLE_EXEKUTOR_RVAL}" = "${MULLE_EXEKUTOR_STRACKTRACE_RVAL:-127}" ] && stacktrace
+
+   return ${MULLE_EXEKUTOR_RVAL}
+}
+
+
+function eval_rexekutor()
+{
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      _exekutor_trace "eval_exekutor_print" "$@"
+   fi
+
+   eval "$@"
+   MULLE_EXEKUTOR_RVAL=$?
+
+   [ "${MULLE_EXEKUTOR_RVAL}" = "${MULLE_EXEKUTOR_STRACKTRACE_RVAL:-127}" ] && stacktrace
+
+   return ${MULLE_EXEKUTOR_RVAL}
+}
+
+
+function redirect_exekutor()
+{
+   local output="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      _exekutor_trace_output "exekutor_print" '>' "${output}" "$@"
+   fi
+
+   if [ "${MULLE_FLAG_EXEKUTOR_DRY_RUN:-}" = 'YES' ]
+   then
+      return
+   fi
+
+   ( "$@" ) > "${output}"
+   MULLE_EXEKUTOR_RVAL=$?
+
+   [ "${MULLE_EXEKUTOR_RVAL}" = "${MULLE_EXEKUTOR_STRACKTRACE_RVAL:-127}" ] && stacktrace
+
+   return ${MULLE_EXEKUTOR_RVAL}
+}
+
+
+
+function redirect_eval_exekutor()
+{
+   local output="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      _exekutor_trace_output "eval_exekutor_print" '>' "${output}" "$@"
+   fi
+
+   if [ "${MULLE_FLAG_EXEKUTOR_DRY_RUN:-}" = 'YES' ]
+   then
+      return
+   fi
+
+   ( eval "$@" ) > "${output}"
+
+   MULLE_EXEKUTOR_RVAL=$?
+
+   [ "${MULLE_EXEKUTOR_RVAL}" = "${MULLE_EXEKUTOR_STRACKTRACE_RVAL:-127}" ] && stacktrace
+
+   return ${MULLE_EXEKUTOR_RVAL}
+}
+
+
+redirect_append_exekutor()
+{
+   local output="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      _exekutor_trace_output "exekutor_print" '>>' "${output}" "$@"
+   fi
+
+   if [ "${MULLE_FLAG_EXEKUTOR_DRY_RUN:-}" = 'YES' ]
+   then
+      return
+   fi
+
+   ( "$@" ) >> "${output}"
+
+   MULLE_EXEKUTOR_RVAL=$?
+
+   [ "${MULLE_EXEKUTOR_RVAL}" = "${MULLE_EXEKUTOR_STRACKTRACE_RVAL:-127}" ] && stacktrace
+
+   return ${MULLE_EXEKUTOR_RVAL}
+}
+
+
+_redirect_append_eval_exekutor()
+{
+   local output="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      _exekutor_trace_output "eval_exekutor_print" '>>' "${output}" "$@"
+   fi
+
+   if [ "${MULLE_FLAG_EXEKUTOR_DRY_RUN:-}" = 'YES' ]
+   then
+      return
+   fi
+
+   ( eval "$@" ) >> "${output}"
+
+   MULLE_EXEKUTOR_RVAL=$?
+
+   [ "${MULLE_EXEKUTOR_RVAL}" = "${MULLE_EXEKUTOR_STRACKTRACE_RVAL:-127}" ] && stacktrace
+
+   return ${MULLE_EXEKUTOR_RVAL}
+}
+
+
+_append_tee_exekutor()
+{
+   local output="$1"; shift
+   local teeoutput="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      _exekutor_trace_output "eval_exekutor_print" '>>' "${output}" "$@"
+   fi
+
+   if [ "${MULLE_FLAG_EXEKUTOR_DRY_RUN:-}" = 'YES' ]
+   then
+      return
+   fi
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      ( "$@" ) 2>&1 | tee -a "${teeoutput}" "${output}"
+      MULLE_EXEKUTOR_RVAL=${pipestatus[1]}
+   else
+      ( "$@" ) 2>&1 | tee -a "${teeoutput}" "${output}"
+      MULLE_EXEKUTOR_RVAL=${PIPESTATUS[0]}
+   fi
+
+   [ "${MULLE_EXEKUTOR_RVAL}" = "${MULLE_EXEKUTOR_STRACKTRACE_RVAL:-127}" ] && stacktrace
+
+   return "${MULLE_EXEKUTOR_RVAL}"
+}
+
+
+_append_tee_eval_exekutor()
+{
+   local output="$1"; shift
+   local teeoutput="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" = 'YES' ]
+   then
+      _exekutor_trace_output "eval_exekutor_print" '>>' "${output}" "$@"
+   fi
+
+   if [ "${MULLE_FLAG_EXEKUTOR_DRY_RUN:-}" = 'YES' ]
+   then
+      return
+   fi
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      ( eval "$@" ) 2>&1 | tee -a "${teeoutput}" "${output}"
+      MULLE_EXEKUTOR_RVAL=${pipestatus[1]}
+   else
+      ( eval "$@" ) 2>&1 | tee -a "${teeoutput}" "${output}"
+      MULLE_EXEKUTOR_RVAL=${PIPESTATUS[0]}
+   fi
+
+   [ "${MULLE_EXEKUTOR_RVAL}" = "${MULLE_EXEKUTOR_STRACKTRACE_RVAL:-127}" ] && stacktrace
+
+   return "${MULLE_EXEKUTOR_RVAL}"
+}
+
+
+function logging_tee_exekutor()
+{
+   local output="$1"; shift
+   local teeoutput="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" != 'YES' ]
+   then
+      exekutor_print "$@" >> "${teeoutput}"
+   fi
+   exekutor_print "$@" >> "${output}"
+
+   _append_tee_exekutor "${output}" "${teeoutput}" "$@"
+}
+
+
+function logging_tee_eval_exekutor()
+{
+   local output="$1"; shift
+   local teeoutput="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" != 'YES' ]
+   then
+      eval_exekutor_print "$@" >> "${teeoutput}"
+   fi
+   eval_exekutor_print "$@" >> "${output}"
+
+   _append_tee_eval_exekutor "${output}" "${teeoutput}" "$@"
+}
+
+
+function logging_redirekt_exekutor()
+{
+   local output="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" != 'YES' ]
+   then
+      exekutor_print "$@" >> "${output}"
+   fi
+   redirect_append_exekutor "${output}" "$@"
+}
+
+
+function logging_redirect_eval_exekutor()
+{
+   local output="$1"; shift
+
+   if [ "${MULLE_FLAG_LOG_EXEKUTOR:-}" != 'YES' ]
+   then
+      eval_exekutor_print "$@" >> "${output}"
+   fi
+   _redirect_append_eval_exekutor "${output}" "$@"
+}
+
+
+function rexecute_column_table_or_cat()
+{
+   local separator="$1"; shift
+
+   local cmd
+   local column_cmds="mulle-column column cat"
+
+   if ! [ ${COLUMN+x} ]
+   then
+      .for cmd in ${column_cmds}
+      .do
+         if COLUMN="`command -v "${cmd}" `"
+         then
+            .break
+         fi
+      .done
+   fi
+
+   if [ -z "${COLUMN}" ]
+   then
+      fail "No matching executable for any of ${column_cmds// /,} found"
+   fi
+
+   case "${COLUMN}" in
+      *column)
+         rexekutor "${COLUMN}" '-t' '-s' "${separator:-;}" "$@"
+      ;;
+
+      *)
+         rexekutor "${COLUMN}" "$@"
+      ;;
+   esac
+}
+
+fi
+:
+if ! [ ${MULLE_STRING_SH+x} ]
+then
+MULLE_STRING_SH='included'
+
+[ -z "${MULLE_BASHGLOBAL_SH}" ]    && _fatal "mulle-bashglobal.sh must be included before mulle-file.sh"
+[ -z "${MULLE_COMPATIBILITY_SH}" ] && _fatal "mulle-compatibility.sh must be included before mulle-string.sh"
+
+
+
+
+
+
+function r_trim_whitespace()
+{
+   RVAL="$*"
+   RVAL="${RVAL#"${RVAL%%[![:space:]]*}"}"
+   RVAL="${RVAL%"${RVAL##*[![:space:]]}"}"
+}
+
+
+
+
+function r_upper_firstchar()
+{
+   case "${BASH_VERSION:-}" in
+      [0123]*)
+         RVAL="`printf "%s" "${1:0:1}" | tr '[:lower:]' '[:upper:]'`"
+         RVAL="${RVAL}${1:1}"
+      ;;
+
+      *)
+         if [ ${ZSH_VERSION+x} ]
+         then
+            RVAL="${1:0:1}"
+            RVAL="${RVAL:u}${1:1}"
+         else
+            RVAL="${1^}"
+         fi
+      ;;
+   esac
+}
+
+
+function r_capitalize()
+{
+   r_lowercase "$@"
+   r_upper_firstchar "${RVAL}"
+}
+
+
+function r_uppercase()
+{
+   case "${BASH_VERSION:-}" in
+      [0123]*)
+         RVAL="`printf "%s" "$1" | tr '[:lower:]' '[:upper:]'`"
+      ;;
+
+      *)
+         if [ ${ZSH_VERSION+x} ]
+         then
+            RVAL="${1:u}"
+         else
+            RVAL="${1^^}"
+         fi
+      ;;
+   esac
+}
+
+function r_lowercase()
+{
+   case "${BASH_VERSION:-}" in
+      [0123]*)
+         RVAL="`printf "%s" "$1" | tr '[:upper:]' '[:lower:]'`"
+      ;;
+
+      *)
+         if [ ${ZSH_VERSION+x} ]
+         then
+            RVAL="${1:l}"
+         else
+            RVAL="${1,,}"
+         fi
+      ;;
+   esac
+}
+
+
+function r_identifier()
+{
+   RVAL="${1//-/_}" # __
+   RVAL="${RVAL//[^a-zA-Z0-9]/_}"
+   case "${RVAL}" in
+      [0-9]*)
+         RVAL="_${RVAL}"
+      ;;
+   esac
+}
+
+
+function r_extended_identifier()
+{
+   RVAL="${1//[^a-zA-Z0-9+:.=_-]/_}"
+}
+
+
+
+
+function r_append()
+{
+   RVAL="${1}${2}"
+}
+
+function r_concat()
+{
+   local separator="${3:- }"
+
+   if [ -z "${1}" ]
+   then
+      RVAL="${2}"
+   else
+      if [ -z "${2}" ]
+      then
+         RVAL="${1}"
+      else
+         RVAL="${1}${separator}${2}"
+      fi
+   fi
+}
+
+
+function r_concat_unique()
+{
+   local separator="${3:- }"
+
+   case "${separator}${1}${separator}" in
+      *${separator}${2}${separator}*)
+         RVAL="${1}"
+         return 0
+      ;;
+   esac
+
+   r_concat "$@"
+}
+
+function r_concat_if_missing()
+{
+   r_concat_unique "$@"
+}
+
+
+r_remove_duplicate_separators()
+{
+   local s="$1"
+   local separator="${2:- }"
+
+   local escaped
+   local dualescaped
+   local replacement
+
+   printf -v escaped '%q' "${separator}"
+
+   dualescaped="${escaped//\//\/\/}"
+   replacement="${separator}"
+   case "${separator}" in
+      */*)
+         replacement="${escaped}"
+      ;;
+   esac
+
+   local old
+
+   RVAL="${s}"
+   old=''
+   while [ "${RVAL}" != "${old}" ]
+   do
+      old="${RVAL}"
+      RVAL="${RVAL//${dualescaped}${dualescaped}/${replacement}}"
+   done
+}
+
+
+r_remove_ugly()
+{
+   local s="$1"
+   local separator="${2:- }"
+
+   local escaped
+   local dualescaped
+   local replacement
+
+   printf -v escaped '%q' "${separator}"
+
+   dualescaped="${escaped//\//\/\/}"
+   replacement="${separator}"
+   case "${separator}" in
+      */*)
+         replacement="${escaped}"
+      ;;
+   esac
+
+   local old
+
+   RVAL="${s}"
+   old=''
+   while [ "${RVAL}" != "${old}" ]
+   do
+      old="${RVAL}"
+      RVAL="${RVAL##[${separator}]}"
+      RVAL="${RVAL%%[${separator}]}"
+      RVAL="${RVAL//${dualescaped}${dualescaped}/${replacement}}"
+   done
+}
+
+function r_colon_concat()
+{
+   r_concat "$1" "$2" ":"
+   r_remove_ugly "${RVAL}" ":"
+}
+
+function r_colon_concat_if_missing()
+{
+   r_concat_if_missing "$1" "$2" ":"
+   r_remove_ugly "${RVAL}" ":"
+}
+
+
+function r_comma_concat()
+{
+   r_concat "$1" "$2" ","
+   r_remove_ugly "${RVAL}" ","
+}
+
+
+function r_comma_concat_if_missing()
+{
+   r_concat_if_missing "$1" "$2" ","
+   r_remove_ugly "${RVAL}" ","
+}
+
+
+function r_semicolon_concat()
+{
+   r_concat "$1" "$2" ";"
+}
+
+
+function r_slash_concat()
+{
+   r_concat "$1" "$2" "/"
+   r_remove_duplicate_separators "${RVAL}" "/"
+}
+
+
+
+
+
+function r_list_remove()
+{
+   local sep="${3:- }"
+
+   RVAL="${sep}$1${sep}//${sep}$2${sep}/}"
+   RVAL="${RVAL##"${sep}"}"
+   RVAL="${RVAL%%"${sep}"}"
+}
+
+
+function r_colon_remove()
+{
+   r_list_remove "$1" "$2" ":"
+}
+
+
+function r_comma_remove()
+{
+   r_list_remove "$1" "$2" ","
+}
+
+function r_add_line()
+{
+   if [ ! -z "${1:0:1}" -a ! -z "${2:0:1}" ]
+   then
+      RVAL="$1"$'\n'"$2"
+   else
+      RVAL="$1$2"
+   fi
+}
+
+
+function r_remove_line()
+{
+   local lines="$1"
+   local search="$2"
+
+   local line
+
+   local delim
+
+   delim=""
+   RVAL=
+
+   .foreachline line in ${lines}
+   .do
+      if [ "${line}" != "${search}" ]
+      then
+         RVAL="${RVAL}${delim}${line}"
+         delim=$'\n'
+      fi
+   .done
+}
+
+
+function  r_remove_line_once()
+{
+   local lines="$1"
+   local search="$2"
+
+   local line
+
+   local delim
+
+   delim=""
+   RVAL=
+
+   .foreachline line in ${lines}
+   .do
+      if [ -z "${search}" -o "${line}" != "${search}" ]
+      then
+         RVAL="${RVAL}${delim}${line}"
+         delim=$'\n'
+      else 
+         search="" 
+      fi
+   .done
+}
+
+
+function  r_get_last_line()
+{
+  RVAL="$(sed -n '$p' <<< "$1")" # get last line
+}
+
+
+function r_line_at_index()
+{
+   RVAL="$(sed -n -e "$(( $2 + 1 ))p" <<< "$1")"
+}
+
+
+function r_remove_last_line()
+{
+   RVAL="$(sed '$d' <<< "$1")"  # remove last line
+}
+
+
+function find_item()
+{
+   local line="$1"
+   local search="$2"
+   local delim="${3:-,}"
+
+   shell_is_extglob_enabled || _internal_fail "need extglob enabled"
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      case "${delim}${line}${delim}" in
+         *"${delim}${~search}${delim}"*)
+            return 0
+         ;;
+      esac
+   else
+      case "${delim}${line}${delim}" in
+         *"${delim}${search}${delim}"*)
+            return 0
+         ;;
+      esac
+   fi      
+   return 1
+}
+
+
+_find_empty_line_zsh()
+{
+   local lines="$1"
+
+   case "${lines}" in 
+      *$'\n'$'\n'*)
+         return 0
+      ;;
+   esac
+
+   return 1
+}
+
+
+_find_line_zsh()
+{
+   local lines="$1"
+   local search="$2"
+
+   if [ -z "${search:0:1}" ]
+   then
+      if [ -z "${lines:0:1}" ]
+      then
+         return 0
+      fi
+
+      _find_empty_line_zsh "${lines}"
+      return $?
+   fi
+
+   local line
+
+   .foreachline line in ${lines}
+   .do
+      if [ "${line}" = "${search}" ]
+      then
+         return 0
+      fi
+   .done
+
+   return 1
+}
+
+
+function find_line()
+{
+   if [ ${ZSH_VERSION+x} ]
+   then
+      _find_line_zsh "$@"
+      return $?
+   fi
+
+   local lines="$1"
+   local search="$2"
+
+   local escaped_lines
+   local pattern
+
+   printf -v escaped_lines "%q" "
+${lines}
+"
+
+   printf -v pattern "%q" "${search}
+"
+   pattern="${pattern:2}"
+   pattern="${pattern%???}"
+
+   local rval
+
+   rval=1
+
+   shell_is_extglob_enabled || _internal_fail "extglob must be enabled"
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      case "${escaped_lines}" in
+         *"\\n${~pattern}\\n"*)
+            rval=0
+         ;;
+      esac
+   else
+      case "${escaped_lines}" in
+         *"\\n${pattern}\\n"*)
+            rval=0
+         ;;
+      esac
+   fi
+
+   return $rval
+}
+
+
+function r_count_lines()
+{
+   local array="$1"
+
+   RVAL=0
+
+   local line
+
+   .foreachline line in ${array}
+   .do
+      RVAL=$((RVAL + 1))
+   .done
+}
+
+
+
+function r_add_unique_line()
+{
+   local lines="$1"
+   local line="$2"
+
+   if [ -z "${line:0:1}" -o -z "${lines:0:1}" ]
+   then
+      RVAL="${lines}${line}"
+      return
+   fi
+
+   if find_line "${lines}" "${line}"
+   then
+      RVAL="${lines}"
+      return
+   fi
+
+   RVAL="${lines}
+${line}"
+}
+
+
+function r_remove_duplicate_separators_lines()
+{
+   RVAL="`awk '!x[$0]++' <<< "$@"`"
+}
+
+
+function remove_duplicate_lines()
+{
+   awk '!x[$0]++' <<< "$@"
+}
+
+
+function remove_duplicate_lines_stdin()
+{
+   awk '!x[$0]++'
+}
+
+
+function r_reverse_lines()
+{
+   local lines="$1"
+
+   local line
+   local delim
+
+   delim=""
+   RVAL=
+
+   while IFS=$'\n' read -r line
+   do
+      RVAL="${line}${delim}${RVAL}"
+      delim=$'\n'
+   done <<< "${lines}"
+}
+
+
+function r_split()
+{
+   local s="$1"
+   local sep="${2:-${IFS}}"
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      unset RVAL
+      RVAL=("${(@ps:$sep:)s}")
+   else
+      shell_disable_glob
+      IFS="${sep}" read -r -a RVAL <<< "${s}"
+      shell_enable_glob
+   fi
+}
+
+
+function r_betwixt()
+{
+   local sep="$1" ; shift
+
+   local tmp
+
+   printf -v tmp "%s${sep}" "$@"
+   RVAL="${tmp%"${sep}"}"
+}
+
+
+is_yes()
+{
+   local s
+
+   case "$1" in
+      [yY][eE][sS]|[yY]|1|[oO][nN])
+         return 0
+      ;;
+      [nN][oO]|[nN]|0|[oO][fF][fF]|"")
+         return 1
+      ;;
+
+      *)
+         return 4
+      ;;
+   esac
+}
+
+
+
+
+
+
+
+function r_escaped_grep_pattern()
+{
+   local s="$1"
+
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      local i
+      local c
+
+      RVAL=
+      for (( i=0; i < ${#s}; i++ ))
+      do
+         c="${s:$i:1}"
+         case "$c" in
+            $'\n'|$'\r'|$'\t'|$'\f'|"\\"|'['|']'|'$'|'*'|'.'|'^'|'|')
+               RVAL+="\\"
+            ;;
+         esac
+         RVAL+="$c"
+      done
+   else
+      s="${s//\\/\\\\}"
+      s="${s//\[/\\[}"
+      s="${s//\]/\\]}"
+      s="${s//\$/\\$}"
+      s="${s//\*/\\*}"
+      s="${s//\./\\.}"
+      s="${s//\^/\\^}"
+      s="${s//\|/\\|}"
+
+      s="${s//$'\n'/\\$'\n'}"
+      s="${s//$'\t'/\\$'\t'}"
+      s="${s//$'\r'/\\$'\r'}"
+      s="${s//$'\f'/\\$'\f'}"
+      RVAL="$s"
+   fi
+}
+
+
+function r_escaped_sed_pattern()
+{
+   local s="$1"
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      local i
+      local c
+
+      RVAL=
+      for (( i=0; i < ${#s}; i++ ))
+      do
+         c="${s:$i:1}"
+         case "$c" in
+            $'\n'|$'\r'|$'\t'|$'\f'|"\\"|'['|']'|'/'|'$'|'*'|'.'|'^')
+               RVAL+="\\"
+            ;;
+         esac
+         RVAL+="$c"
+      done
+   else
+      s="${s//\\/\\\\}"
+      s="${s//\[/\\[}"
+      s="${s//\]/\\]}"
+      s="${s//\//\\/}"
+      s="${s//\$/\\$}"
+      s="${s//\*/\\*}"
+      s="${s//\./\\.}"
+      s="${s//\^/\\^}"
+      s="${s//$'\n'/\\$'\n'}"
+      s="${s//$'\t'/\\$'\t'}"
+      s="${s//$'\r'/\\$'\r'}"
+      s="${s//$'\f'/\\$'\f'}"
+      RVAL="$s"
+   fi
+}
+
+
+function r_escaped_sed_replacement()
+{
+   local s="$1"
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      local i
+      local c
+
+      RVAL=
+      for (( i=0; i < ${#s}; i++ ))
+      do
+         c="${s:$i:1}"
+         case "$c" in
+            $'\n'|$'\r'|$'\t'|$'\f'|"\\"|'/'|'&')
+               RVAL+="\\"
+            ;;
+         esac
+         RVAL+="$c"
+      done
+   else
+      s="${s//\\/\\\\}"        # escape backslashes first
+      s="${s//\//\\/}"         # escape forward slashes
+      s="${s//&/\\&}"          # escape ampersands
+
+      s="${s//$'\n'/\\$'\n'}"
+      s="${s//$'\t'/\\$'\t'}"
+      s="${s//$'\r'/\\$'\r'}"
+      s="${s//$'\f'/\\$'\f'}"
+      RVAL="$s"
+   fi
+}
+
+
+function r_escaped_spaces()
+{
+   RVAL="${1// /\\ }"
+}
+
+
+function r_escaped_backslashes()
+{
+   RVAL="${1//\\/\\\\}"
+}
+
+
+function r_escaped_singlequotes()
+{
+   local quote
+
+   quote="'"
+   RVAL="${1//${quote}/${quote}\"${quote}\"${quote}}"
+}
+
+
+function r_escaped_doublequotes()
+{
+   RVAL="${*//\\/\\\\}"
+   RVAL="${RVAL//\"/\\\"}"
+}
+
+function r_unescaped_doublequotes()
+{
+   RVAL="${*//\\\"/\"}"
+   RVAL="${RVAL//\\\\/\\}"
+}
+
+
+function r_escaped_shell_string()
+{
+   printf -v RVAL '%q' "$*"
+}
+
+
+function r_escaped_json()
+{
+   RVAL="${*//\\/\\\\}"
+
+   RVAL="${RVAL//\"/\\\"}"
+
+   RVAL="${RVAL//$'\n'/\\n}"
+
+   RVAL="${RVAL//$'\r'/\\r}"
+
+   RVAL="${RVAL//$'\t'/\\t}"
+
+   RVAL="${RVAL//$'\b'/\\b}"
+
+   RVAL="${RVAL//$'\f'/\\f}"
+
+   RVAL="${RVAL//\//\\/}"
+
+   RVAL="${RVAL//$'\x1'/\\u0001}"
+   RVAL="${RVAL//$'\x2'/\\u0002}"
+   RVAL="${RVAL//$'\x3'/\\u0003}"
+   RVAL="${RVAL//$'\x4'/\\u0004}"
+   RVAL="${RVAL//$'\x5'/\\u0005}"
+   RVAL="${RVAL//$'\x6'/\\u0006}"
+   RVAL="${RVAL//$'\x7'/\\u0007}"
+   RVAL="${RVAL//$'\xB'/\\u000B}"
+   RVAL="${RVAL//$'\xE'/\\u000E}"
+   RVAL="${RVAL//$'\xF'/\\u000F}"
+   RVAL="${RVAL//$'\x10'/\\u0010}"
+   RVAL="${RVAL//$'\x11'/\\u0011}"
+   RVAL="${RVAL//$'\x12'/\\u0012}"
+   RVAL="${RVAL//$'\x13'/\\u0013}"
+   RVAL="${RVAL//$'\x14'/\\u0014}"
+   RVAL="${RVAL//$'\x15'/\\u0015}"
+   RVAL="${RVAL//$'\x16'/\\u0016}"
+   RVAL="${RVAL//$'\x17'/\\u0017}"
+   RVAL="${RVAL//$'\x18'/\\u0018}"
+   RVAL="${RVAL//$'\x19'/\\u0019}"
+   RVAL="${RVAL//$'\x1A'/\\u001A}"
+   RVAL="${RVAL//$'\x1B'/\\u001B}"
+   RVAL="${RVAL//$'\x1C'/\\u001C}"
+   RVAL="${RVAL//$'\x1D'/\\u001D}"
+   RVAL="${RVAL//$'\x1E'/\\u001E}"
+   RVAL="${RVAL//$'\x1F'/\\u001F}"
+}
+
+
+
+function string_has_prefix()
+{
+  [ "${1#"$2"}" != "$1" ]
+}
+
+
+function string_has_suffix()
+{
+  [ "${1%"$2"}" != "$1" ]
+}
+
+
+
+
+
+function r_fnv1a_32()
+{
+   local i
+   local len
+
+   i=0
+   len="${#1}"
+
+   local hash
+   local value
+
+   hash=2166136261
+   while [ $i -lt $len ]
+   do
+      printf -v value "%u" "'${1:$i:1}"
+      hash=$(( ((hash ^ (value & 0xFF)) * 16777619) & 0xFFFFFFFF ))
+      i=$(( i + 1 ))
+   done
+
+   RVAL=${hash}
+}
+
+
+
+
+
+_r_prefix_with_unquoted_string()
+{
+   local s="$1"
+   local c="$2"
+
+   local prefix
+   local e_prefix
+   local head
+
+   head=""
+   while :
+   do
+      prefix="${s%%"${c}"*}"             # a${
+      if [ "${prefix}" = "${_s}" ]
+      then
+         RVAL=
+         return 1
+      fi
+
+      e_prefix="${_s%%\\"${c}"*}"         # a\\${ or whole string if no match
+      if [ "${e_prefix}" = "${_s}" ]
+      then
+         RVAL="${head}${prefix}"
+         return 0
+      fi
+
+      if [ "${#e_prefix}" -gt "${#prefix}" ]
+      then
+         RVAL="${head}${prefix}"
+         return 0
+      fi
+
+      e_prefix="${e_prefix}\\${c}"
+      head="${head}${e_prefix}"
+      s="${s:${#e_prefix}}"
+   done
+}
+
+
+_r_expand_string()
+{
+   local prefix_opener
+   local prefix_closer
+   local identifier
+   local identifier_1
+   local identifier_2
+   local anything
+   local value
+   local default_value
+   local head
+   local found
+
+   head=""
+
+   while [ ${#_s} -ne 0 ]
+   do
+      _r_prefix_with_unquoted_string "${_s}" '${'
+      found=$?
+      prefix_opener="${RVAL}" # can be empty
+
+      if ! _r_prefix_with_unquoted_string "${_s}" '}'
+      then
+         if [ ${found} -eq 0 ]
+         then
+            log_error "missing '}'"
+            RVAL=
+            return 1
+         fi
+
+      else
+         prefix_closer="${RVAL}"
+         if [ ${found} -ne 0 -o ${#prefix_closer} -lt ${#prefix_opener} ]
+         then
+            _s="${_s:${#prefix_closer}}"
+            _s="${_s#\}}"
+            RVAL="${head}${prefix_closer}"
+            return 0
+         fi
+      fi
+
+      if [ ${found} -ne 0 ]
+      then
+         RVAL="${head}${_s}"
+         return 0
+      fi
+
+      head="${head}${prefix_opener}"   # copy verbatim and continue
+
+      _s="${_s:${#prefix_opener}}"
+      _s="${_s#\$\{}"
+
+      anything=
+      identifier_1="${_s%%\}*}"     # this can't fail
+      identifier_2="${_s%%:-*}"
+      if [ "${identifier_2}" = "${_s}" ]
+      then
+         identifier_2=""
+      fi
+
+      default_value=
+      if [ -z "${identifier_2}" -o ${#identifier_1} -lt ${#identifier_2} ]
+      then
+         identifier="${identifier_1}"
+         _s="${_s:${#identifier}}"
+         _s="${_s#\}}"
+         anything=
+      else
+         identifier="${identifier_2}"
+         _s="${_s:${#identifier}}"
+         _s="${_s#:-}"
+         anything="${_s}"
+         if [ ! -z "${anything}" ]
+         then
+            if ! _r_expand_string
+            then
+               return 1
+            fi
+            default_value="${RVAL}"
+         fi
+      fi
+
+      r_identifier "${identifier}"
+      identifier="${RVAL}"
+
+      if [ "${_expand}" = 'YES' ]
+      then
+         r_shell_indirect_expand "${identifier}"
+         value="${RVAL:-${default_value}}"
+      else
+         value="${default_value}"
+      fi
+      head="${head}${value}"
+   done
+
+   RVAL="${head}"
+   return 0
+}
+
+
+function r_expanded_string()
+{
+   local string="$1"
+   local expand="${2:-YES}"
+
+   local _s="${string}"
+   local _expand="${expand}"
+
+   local rval
+
+   _r_expand_string
+   rval=$?
+
+   return $rval
+}
+
+
+fi
+:
+if ! [ ${MULLE_INIT_SH+x} ]
+then
+MULLE_INIT_SH='included'
+
+[ -z "${MULLE_STRING_SH}" ] && _fatal "mulle-string.sh must be included before mulle-init.sh"
+
+
+function r_dirname()
+{
+   RVAL="$1"
+
+   while :
+   do
+      case "${RVAL}" in
+         /)
+            return
+         ;;
+
+         */)
+            RVAL="${RVAL%?}"
+            continue
+         ;;
+      esac
+      break
+   done
+
+   local last
+
+   last="${RVAL##*/}"
+   RVAL="${RVAL%${last}}"
+
+   while :
+   do
+      case "${RVAL}" in
+         /)
+           return
+         ;;
+
+         */)
+            RVAL="${RVAL%?}"
+         ;;
+
+         *)
+            RVAL="${RVAL:-.}"
+            return
+         ;;
+      esac
+   done
+}
+
+
+r_prepend_path_if_relative()
+{
+   case "$2" in
+      /*)
+         RVAL="$2"
+      ;;
+
+      *)
+         RVAL="$1/$2"
+      ;;
+   esac
+}
+
+
+function r_resolve_symlinks()
+{
+   local filepath
+
+   RVAL="$1"
+   local max=${2:-40}
+
+   if [ $max -eq 0 ]
+   then
+      RVAL=
+      return 1
+   fi
+
+   if filepath="`readlink "${RVAL}"`"
+   then
+      r_dirname "${RVAL}"
+      r_prepend_path_if_relative "${RVAL}" "${filepath}"
+      r_resolve_symlinks "${RVAL}" $(( max - 1 ))
+   fi
+}
+
+
+function r_get_libexec_dir()
+{
+   local executablepath="$1"
+   local subdir="$2"
+   local matchfile="$3"
+
+   local exedirpath
+   local prefix
+
+   case "${executablepath}" in
+      \.*|/*|~*)
+      ;;
+
+      *)
+         executablepath="`command -v "${executablepath}"`"
+      ;;
+   esac
+
+   r_resolve_symlinks "${executablepath}"
+   executablepath="${RVAL}"
+
+   r_dirname "${executablepath}"
+   exedirpath="`( cd "${RVAL}" && pwd -P ) 2>/dev/null `"
+
+   r_dirname "${exedirpath}"
+   prefix="${RVAL}"
+
+   local is_present
+
+   RVAL="${prefix}/${MULLE_BASHFUNCTIONS_LIBEXEC_DIRNAME:-libexec}/${subdir}"
+   if [ ! -f "${RVAL}/${matchfile}" ]
+   then
+      RVAL="${exedirpath}/src"
+   else
+      is_present="${RVAL}/${matchfile}"
+   fi
+
+   case "$RVAL" in
+      /*|~*)
+      ;;
+
+      .)
+         RVAL="$PWD"
+      ;;
+
+      *)
+         RVAL="$PWD/${RVAL}"
+      ;;
+   esac
+
+   if [ "${is_present}" = "${RVAL}/${matchfile}" ]
+   then
+      return 0
+   fi
+
+   if [ ! -f "${RVAL}/${matchfile}" ]
+   then
+      printf "%s\n" "$0 fatal error: Could not find \"${subdir}\" libexec (${PWD#"${MULLE_USER_PWD}/"})" >&2
+      exit 1
+   fi
+}
+
+
+function r_escaped_eval_arguments()
+{
+   local arg
+   local args
+   local sep
+
+   args=""
+   for arg in "$@"
+   do
+      printf -v args "%s%s%q" "${args}" "${sep}" "${arg}"
+      sep=" "
+   done
+
+   RVAL="${args}"
+}
+
+
+call_with_flags()
+{
+   local functionname="$1"; shift
+   local flags="$1"; [ $# -ne 0 ] && shift
+
+   if [ -z "${flags}" ]
+   then
+      ${functionname} "$@"
+      return $?
+   fi
+
+   r_escaped_eval_arguments "$@"
+   eval "'${functionname}'" "${flags}" "${RVAL}"
+}
+
+fi
+:
+if ! [ ${MULLE_OPTIONS_SH+x} ]
+then
+MULLE_OPTIONS_SH='included'
+
+[ -z "${MULLE_LOGGING_SH}" ] && _fatal "mulle-logging.sh must be included before mulle-options.sh"
+
+
+
+
+options_dump_env()
+{
+   log_trace "ARGS:${C_TRACE2} ${MULLE_ARGUMENTS}"
+   log_trace "PWD :${C_TRACE2} `pwd -P 2> /dev/null`"
+   log_trace "ENV :${C_TRACE2} `env | sort`"
+   log_trace "LS  :${C_TRACE2} `ls -a1F`"
+}
+
+function options_setup_trace()
+{
+   local mode="$1"
+
+   local rc
+
+   if [ "${MULLE_FLAG_LOG_ENVIRONMENT:-}" = YES ]
+   then
+      options_dump_env
+   fi
+
+   rc=2
+   case "${mode}" in
+      VERBOSE)
+         MULLE_FLAG_LOG_VERBOSE='YES'
+      ;;
+
+      FLUFF)
+         MULLE_FLAG_LOG_FLUFF='YES'
+         MULLE_FLAG_LOG_VERBOSE='YES'
+      ;;
+
+      TRACE)
+         MULLE_FLAG_LOG_EXEKUTOR='YES'
+         MULLE_FLAG_LOG_FLUFF='YES'
+         MULLE_FLAG_LOG_VERBOSE='YES'
+      ;;
+
+      1848)
+         MULLE_FLAG_LOG_SETTINGS='YES'
+         MULLE_FLAG_LOG_FLUFF='YES'
+         MULLE_FLAG_LOG_VERBOSE='YES'
+
+         if [ "${MULLE_TRACE_POSTPONE:-}" != 'YES' ]
+         then
+            PS4="+ ${MULLE_TRACE_PS4} + "
+         fi
+         rc=0
+      ;;
+   esac
+
+   log_set_trace_level
+
+   return $rc
+}
+
+
+_options_technical_flags_usage()
+{
+   local DELIMITER="${1:- : }"
+   local align="${2:-YES}"
+
+   local S
+
+   if [ "${align}" = 'YES' ]
+   then
+      S=" "
+   fi
+
+   cat <<EOF
+   -n${S}${S}${S}${DELIMITER}dry run
+   -s${S}${S}${S}${DELIMITER}be silent
+   -v${S}${S}${S}${DELIMITER}be verbose (increase with -vv, -vvv)
+EOF
+
+   if [ ! -z "${MULLE_TRACE:-}" ]
+   then
+      cat <<EOF
+   -ld${S}${S}${DELIMITER}additional debug output
+   -le${S}${S}${DELIMITER}additional environment debug output
+   -lt${S}${S}${DELIMITER}trace through bash code
+   -lx${S}${S}${DELIMITER}external command execution log output
+EOF
+   fi
+}
+
+
+function options_technical_flags_usage()
+{
+   _options_technical_flags_usage "$@" | sort
+}
+
+
+before_trace_fail()
+{
+   [ "${MULLE_TRACE:-}" = '1848' ] || \
+      fail "option \"$1\" must be specified after -lt"
+}
+
+
+after_trace_warning()
+{
+   [ "${MULLE_TRACE:-}" = '1848' ] && \
+      log_warning "warning: ${MULLE_EXECUTABLE_FAIL_PREFIX}: $1 after -lt invalidates -lt"
+}
+
+
+function options_technical_flags()
+{
+   local flag="$1"
+
+   case "${flag}" in
+      -n|--dry-run)
+         MULLE_FLAG_EXEKUTOR_DRY_RUN='YES'
+      ;;
+
+      -s|--silent)
+         MULLE_FLAG_LOG_TERSE='YES'
+      ;;
+
+      --silent-but-warn)
+         MULLE_FLAG_LOG_TERSE='WARN'
+      ;;
+
+      -v|--verbose)
+         after_trace_warning "${flag}"
+
+         MULLE_TRACE='VERBOSE'
+      ;;
+
+      -V)
+         after_trace_warning "${flag}"
+
+         MULLE_TRACE='VERBOSE'
+         return # don't propagate
+      ;;
+
+      -ld|--log-debug)
+         MULLE_FLAG_LOG_DEBUG='YES'
+      ;;
+
+      -lD)
+         MULLE_FLAG_LOG_DEBUG='YES'
+         return # don't propagate
+      ;;
+
+      -lD*D)
+         MULLE_FLAG_LOG_DEBUG='YES'
+         flag="${flag%D}"
+      ;;
+
+      -le|--log-environment)
+         MULLE_FLAG_LOG_ENVIRONMENT='YES'
+      ;;
+
+      -lE)
+         MULLE_FLAG_LOG_ENVIRONMENT='YES'
+         return # don't propagate
+      ;;
+
+      -lE*E)
+         MULLE_FLAG_LOG_ENVIRONMENT='YES'
+         flag="${flag%E}"
+      ;;
+
+      -ls|--log-settings)
+         MULLE_FLAG_LOG_SETTINGS='YES'
+      ;;
+
+      -lS)
+         MULLE_FLAG_LOG_SETTINGS='YES'
+         return # don't propagate
+      ;;
+
+      -lS*S)
+         MULLE_FLAG_LOG_SETTINGS='YES'
+         flag="${flag%S}"
+      ;;
+
+      -lx|--log-exekutor|--log-execution)
+         MULLE_FLAG_LOG_EXEKUTOR='YES'
+      ;;
+
+      -lx*)
+      ;;
+
+      -lX)
+         MULLE_FLAG_LOG_EXEKUTOR='YES'
+         return # don't propagate
+      ;;
+
+      -lX*X)
+         MULLE_FLAG_LOG_EXEKUTOR='YES'
+         flag="${flag%X}"
+      ;;
+
+      -l-)
+         MULLE_FLAG_LOG_DEBUG=
+         MULLE_FLAG_LOG_ENVIRONMENT=
+         MULLE_FLAG_LOG_EXEKUTOR=
+         MULLE_FLAG_LOG_SETTINGS=
+      ;;
+
+      -lt|--trace)
+         MULLE_TRACE='1848'
+         if [ ${ZSH_VERSION+x} ]
+         then
+            MULLE_TRACE_PS4='%1x:%I' # TODO: fix for zsh
+         else
+            MULLE_TRACE_PS4='${BASH_SOURCE[0]##*/}:${LINENO}'
+         fi
+      ;;
+
+      -lT)
+         MULLE_TRACE='1848'
+         if [ ${ZSH_VERSION+x} ]
+         then
+            MULLE_TRACE_PS4='%1x:%I'
+         else
+            MULLE_TRACE_PS4='${BASH_SOURCE[0]##*/}:${LINENO}'
+         fi
+         return # don't propagate
+      ;;
+
+      -tfpwd|--trace-full-pwd)
+         before_trace_fail "${flag}"
+         if [ ${ZSH_VERSION+x} ]
+         then
+            MULLE_TRACE_PS4='%1x:%I \"\w\"'
+         else
+            MULLE_TRACE_PS4='${BASH_SOURCE[0]##*/}:${LINENO} \"\w\"'
+         fi
+      ;;
+
+      -tp|--trace-profile)
+   
+            case "${MULLE_UNAME}" in
+               '')
+                  _internal_fail 'MULLE_UNAME must be set by now'
+               ;;
+               linux)
+                  if [ ${ZSH_VERSION+x} ]
+                  then
+                     MULLE_TRACE_PS4='$(date "+%s.%N (%1x:%I)")'
+                  else
+                     MULLE_TRACE_PS4='$(date "+%s.%N (${BASH_SOURCE[0]##*/}:${LINENO})")'
+                  fi
+               ;;
+               *)
+                  if [ ${ZSH_VERSION+x} ]
+                  then
+                     MULLE_TRACE_PS4='$(date "+%s (%1x:%I)")'
+                  else
+                     MULLE_TRACE_PS4='$(date "+%s (${BASH_SOURCE[0]##*/}:${LINENO})")'
+                  fi
+               ;;
+            esac
+         return # don't propagate
+      ;;
+
+      -tpwd|--trace-pwd)
+         before_trace_fail "${flag}"
+         if [ ${ZSH_VERSION+x} ]
+         then
+            MULLE_TRACE_PS4='%1x:%I \".../\W\"'
+         else
+            MULLE_TRACE_PS4='${BASH_SOURCE[0]##*/}:${LINENO} \".../\W\"'
+         fi
+      ;;
+
+      -tx|--trace-immediately)
+         set -x
+      ;;
+
+      -t-)
+         MULLE_TRACE=
+         set +x
+      ;;
+
+
+      -T*T)
+         MULLE_TRACE='1848'
+         if [ ${ZSH_VERSION+x} ]
+         then
+            MULLE_TRACE_PS4='%1x:%I'
+         else
+            MULLE_TRACE_PS4='${BASH_SOURCE[0]##*/}:${LINENO}'
+         fi
+         flag="${flag%T}"
+      ;;
+
+      -v-|--no-verbose)
+         MULLE_FLAG_LOG_TERSE=
+      ;;
+
+      -vv|--very-verbose)
+         after_trace_warning "${flag}"
+
+         MULLE_TRACE='FLUFF'
+      ;;
+
+      -vvv|--very-very-verbose)
+         after_trace_warning "${flag}"
+
+         MULLE_TRACE='TRACE'
+      ;;
+
+      -VV)
+         after_trace_warning "${flag}"
+
+         MULLE_TRACE='FLUFF'
+         return # don't propagate
+      ;;
+
+      -VVV)
+         after_trace_warning "${flag}"
+
+         MULLE_TRACE='TRACE'
+         return # don't propagate
+      ;;
+
+      --mulle-clear-flags)
+         MULLE_TECHNICAL_FLAGS=''
+         return 0
+      ;;
+
+      --mulle-list-technical-flags)
+         echo "\
+--dry-run
+--mulle-clear-flags
+--mulle-no-errors
+--mulle-no-colors
+--log-debug
+--log-environment
+--log-settings
+--log-exekutor
+--trace
+--trace-full-pwd
+--trace-profile
+--trace-postpone
+--trace-pwd
+--trace-immediately
+--silent
+--verbose
+--very-verbose
+--very-very-verbose"
+         return 0
+      ;;
+
+      --mulle-no-color|--mulle-no-colors)
+         MULLE_NO_COLOR='YES'
+         logging_deinitialize_color
+      ;;
+
+      --mulle-no-error|--mulle-no-errors)
+         MULLE_FLAG_LOG_ERROR='NO'
+      ;;
+
+      *)
+         return 1
+      ;;
+   esac
+
+   if [ ${MULLE_TECHNICAL_FLAGS+x} ]
+   then
+      MULLE_TECHNICAL_FLAGS="${MULLE_TECHNICAL_FLAGS} ${flag}"
+   else
+      MULLE_TECHNICAL_FLAGS="${flag}"
+   fi
+
+   return 0
+}
+
+
+_options_mini_main()
+{
+   while [ $# -ne 0 ]
+   do
+      if options_technical_flags "$1"
+      then
+         shift
+         continue
+      fi
+
+      break
+   done
+
+   options_setup_trace "${MULLE_TRACE:-}" && set -x
+}
+
+fi
+:
+if ! [ ${MULLE_PATH_SH+x} ]
+then
+MULLE_PATH_SH='included'
+
+[ -z "${MULLE_STRING_SH}" ] && _fatal "mulle-string.sh must be included before mulle-path.sh"
+
+
+
+
+function r_filepath_cleaned()
+{
+   RVAL="$1"
+
+   [ -z "${RVAL}" ] && return
+
+   local old
+
+   old=''
+
+   while [ "${RVAL}" != "${old}" ]
+   do
+      old="${RVAL}"
+      RVAL="${RVAL//\/.\///}"
+      RVAL="${RVAL//\/\///}"
+   done
+
+   if [ -z "${RVAL}" ]
+   then
+      RVAL="${1:0:1}"
+   fi
+}
+
+
+r_filepath_concat()
+{
+   local i
+   local s
+   local sep
+   local fallback
+
+   s=""
+   fallback=""
+
+   for i in "$@"
+   do
+      sep="/"
+
+      r_filepath_cleaned "${i}"
+      i="${RVAL}"
+
+      case "$i" in
+         "")
+            continue
+         ;;
+
+         "."|"./")
+            if [ -z "${fallback}" ]
+            then
+               fallback="./"
+            fi
+            continue
+         ;;
+      esac
+
+      case "$i" in
+         "/"|"/.")
+            if [ -z "${fallback}" ]
+            then
+               fallback="/"
+            fi
+            continue
+         ;;
+      esac
+
+      if [ -z "${s}" ]
+      then
+         s="${fallback}$i"
+      else
+         case "${i}" in
+            /*)
+               s="${s}${i}"
+            ;;
+
+            *)
+               s="${s}/${i}"
+            ;;
+         esac
+      fi
+   done
+
+   if [ ! -z "${s}" ]
+   then
+      r_filepath_cleaned "${s}"
+   else
+      RVAL="${fallback:0:1}" # / make ./ . again
+   fi
+}
+
+
+
+
+function r_basename()
+{
+   local filename="$1"
+
+   while :
+   do
+      case "${filename}" in
+         /)
+           RVAL="/"
+           return
+         ;;
+
+         */)
+            filename="${filename%?}"
+         ;;
+
+         *)
+            RVAL="${filename##*/}"
+            return
+         ;;
+      esac
+   done
+}
+
+
+function r_dirname()
+{
+   local filename="$1"
+
+   local last
+
+   while :
+   do
+      case "${filename}" in
+         /)
+            RVAL="${filename}"
+            return
+         ;;
+
+         */)
+            filename="${filename%?}"
+            continue
+         ;;
+      esac
+      break
+   done
+
+   printf -v last '%q' "${filename##*/}"
+   RVAL="${filename%${last}}"
+
+   while :
+   do
+      case "${RVAL}" in
+         /)
+           return
+         ;;
+
+         */)
+            RVAL="${RVAL%?}"
+         ;;
+
+         *)
+            RVAL="${RVAL:-.}"
+            return
+         ;;
+      esac
+   done
+}
+
+
+function r_path_depth()
+{
+   local name="$1"
+
+   local depth
+
+   depth=0
+
+   if [ ! -z "${name}" ]
+   then
+      depth=1
+
+      while [ "$name" != "." -a "${name}" != '/' ]
+      do
+         r_dirname "${name}"
+         name="${RVAL}"
+
+         depth=$((depth + 1))
+      done
+   fi
+   RVAL="${depth}"
+}
+
+
+function r_extensionless_basename()
+{
+   r_basename "$@"
+
+   RVAL="${RVAL%.*}"
+}
+
+
+function r_extensionless_filename()
+{
+   RVAL="${1%.*}"
+}
+
+
+function r_path_extension()
+{
+   r_basename "$@"
+   case "${RVAL}" in
+      *.*)
+        RVAL="${RVAL##*.}"
+        return
+      ;;
+   esac
+
+   RVAL=""
+}
+
+
+
+__r_relative_path_between()
+{
+    RVAL=''
+    [ $# -ge 1 ] && [ $# -le 2 ] || return 1
+
+    current="${2:+"$1"}"
+    target="${2:-"$1"}"
+
+    [ "$target" != . ] || target=/
+
+    target="/${target##/}"
+    [ "$current" != . ] || current=/
+
+    current="${current:="/"}"
+    current="/${current##/}"
+    appendix="${target##/}"
+    relative=''
+
+    while appendix="${target#"$current"/}"
+        [ "$current" != '/' ] && [ "$appendix" = "$target" ]; do
+        if [ "$current" = "$appendix" ]; then
+            relative="${relative:-.}"
+            RVAL="${relative#/}"
+            return 0
+        fi
+        current="${current%/*}"
+        relative="$relative${relative:+/}.."
+    done
+
+    RVAL="$relative${relative:+${appendix:+/}}${appendix#/}"
+}
+
+
+_r_relative_path_between()
+{
+   local a
+   local b
+
+   if [ "${MULLE_TRACE_PATHS_FLIP_X:-}" = 'YES' ]
+   then
+      set +x
+   fi
+
+
+   r_simplified_path "$1"
+   a="${RVAL}"
+   r_simplified_path "$2"
+   b="${RVAL}"
+
+
+   [ -z "${a}" ] && _internal_fail "Empty path (\$1)"
+   [ -z "${b}" ] && _internal_fail "Empty path (\$2)"
+
+   __r_relative_path_between "${b}" "${a}"   # flip args (historic)
+
+   if [ "${MULLE_TRACE_PATHS_FLIP_X:-}" = 'YES' ]
+   then
+      set -x
+   fi
+}
+
+function r_relative_path_between()
+{
+   local a="$1"
+   local b="$2"
+
+
+   case "${a}" in
+      "")
+         _internal_fail "First path is empty"
+      ;;
+
+      ../*|*/..|*/../*|..)
+         _internal_fail "Path \"${a}\" mustn't contain .."
+      ;;
+
+      ./*|*/.|*/./*|.)
+         _internal_fail "Filename \"${a}\" mustn't contain component \".\""
+      ;;
+
+
+      /*)
+         case "${b}" in
+            "")
+               _internal_fail "Second path is empty"
+            ;;
+
+            ../*|*/..|*/../*|..)
+               _internal_fail "Filename \"${b}\" mustn't contain \"..\""
+            ;;
+
+            ./*|*/.|*/./*|.)
+               _internal_fail "Filename \"${b}\" mustn't contain \".\""
+            ;;
+
+
+            /*)
+            ;;
+
+            *)
+               _internal_fail "Mixing absolute filename \"${a}\" and relative filename \"${b}\""
+            ;;
+         esac
+      ;;
+
+      *)
+         case "${b}" in
+            "")
+               _internal_fail "Second path is empty"
+            ;;
+
+            ../*|*/..|*/../*|..)
+               _internal_fail "Filename \"${b}\" mustn't contain component \"..\"/"
+            ;;
+
+            ./*|*/.|*/./*|.)
+               _internal_fail "Filename \"${b}\" mustn't contain component \".\""
+            ;;
+
+            /*)
+               _internal_fail "Mixing relative filename \"${a}\" and absolute filename \"${b}\""
+            ;;
+
+            *)
+            ;;
+         esac
+      ;;
+   esac
+
+   _r_relative_path_between "${a}" "${b}"
+}
+
+
+function r_compute_relative()
+{
+   local name="${1:-}"
+
+   local relative
+   local depth
+
+   r_path_depth "${name}"
+   depth="${RVAL}"
+
+   if [ "${depth}" -gt 1 ]
+   then
+      relative=".."
+      while [ "$depth" -gt 2 ]
+      do
+         relative="${relative}/.."
+         depth=$((depth - 1))
+      done
+   fi
+
+
+   RVAL="${relative}"
+}
+
+
+function is_absolutepath()
+{
+   case "${1}" in
+      /*|~*)
+        return 0
+      ;;
+
+      *)
+        return 1
+      ;;
+   esac
+}
+
+
+function is_relativepath()
+{
+   case "${1}" in
+      ""|/*|~*)
+        return 1
+      ;;
+
+      *)
+        return 0
+      ;;
+   esac
+}
+
+
+function r_absolutepath()
+{
+   local filepath="$1"
+   local working="$2"
+
+   case "${filepath}" in
+      "")
+        RVAL=''
+        return 1
+      ;;
+
+      /*|~*)
+        RVAL="${filepath}"
+        return 0
+      ;;
+   esac
+   
+   working="${working:-`pwd`}"
+   if ! is_absolutepath "${working}"
+   then
+      fail "working directory \"${working}\" must be an absolute path"
+   fi
+
+   RVAL="${working%%/}/${filepath}"
+}
+
+
+function r_simplified_absolutepath()
+{
+   r_absolutepath "$@"
+   r_simplified_path "${RVAL}"
+}
+
+function r_symlink_relpath()
+{
+   local a
+   local b
+
+   r_absolutepath "$1"
+   a="$RVAL"
+
+   r_absolutepath "$2"
+   b="$RVAL"
+
+   _r_relative_path_between "${a}" "${b}"
+}
+
+
+
+_r_simplified_path()
+{
+   local filepath="$1"
+
+   [ -z "${filepath}" ] && fail "empty path given"
+
+   local i
+   local last
+   local result
+   local remove_empty
+
+   result=""
+   last=""
+   remove_empty='NO'  # remove trailing slashes
+
+   .foreachpathcomponent i in ${filepath}
+   .do
+      case "$i" in
+         \.)
+           remove_empty='YES'
+           .continue
+         ;;
+
+         \.\.)
+           remove_empty='YES'
+
+           if [ "${last}" = "|" ]
+           then
+              .continue
+           fi
+
+           if [ ! -z "${last}" -a "${last}" != ".." ]
+           then
+              r_remove_last_line "${result}"
+              result="${RVAL}"
+              r_get_last_line "${result}"
+              last="${RVAL}"
+              .continue
+           fi
+         ;;
+
+         ~*)
+            fail "Can't deal with ~ filepaths"
+         ;;
+
+         "")
+            if [ "${remove_empty}" = 'NO' ]
+            then
+               last='|'
+               result='|'
+            fi
+            .continue
+         ;;
+      esac
+
+      remove_empty='YES'
+
+      last="${i}"
+
+      r_add_line "${result}" "${i}"
+      result="${RVAL}"
+   .done
+
+
+   if [ -z "${result}" ]
+   then
+      RVAL="."
+      return
+   fi
+
+   if [ "${result}" = '|' ]
+   then
+      RVAL="/"
+      return
+   fi
+
+   RVAL="${result//\|/}"
+   RVAL="${RVAL//$'\n'//}"
+   RVAL="${RVAL%/}"
+}
+
+
+function r_simplified_path()
+{
+   case "${1}" in
+      ""|".")
+         RVAL="."
+      ;;
+
+      */|*\.\.*|*\./*|*/\.)
+         if [ "${MULLE_TRACE_PATHS_FLIP_X:-}" = 'YES' ]
+         then
+            set +x
+         fi
+
+         _r_simplified_path "$@"
+
+         if [ "${MULLE_TRACE_PATHS_FLIP_X:-}" = 'YES' ]
+         then
+            set -x
+         fi
+      ;;
+
+      *)
+         RVAL="$1"
+      ;;
+   esac
+}
+
+
+function r_assert_sane_path()
+{
+   r_simplified_path "$1"
+
+   case "${RVAL}" in
+      \$*|~|"${HOME}"|..|.)
+         fail "refuse unsafe path \"$1\""
+      ;;
+
+      /tmp/*)
+      ;;
+
+      ""|/*)
+         local filepath
+
+         filepath="${RVAL}"
+         r_path_depth "${filepath}"
+         if [ "${RVAL}" -le 2 ]
+         then
+            fail "Refuse suspicious path \"$1\""
+         fi
+         RVAL="${filepath}"
+      ;;
+
+      *)
+         if [ "${RVAL}" = "${HOME}" ]
+         then
+            fail "refuse unsafe path \"$1\""
+         fi
+      ;;
+   esac
+}
+
+filepath_contains_filepath()
+{
+    local filepath="${1%/}"  # Path to check, remove trailing slash
+    local other="${2%/}"  # Directory path, remove trailing slash
+    
+    r_simplified_path "${filepath}"
+    filepath="${RVAL}"
+
+    r_simplified_path "${other}"
+    RVAL=${RVAL}
+
+    case "${filepath}" in 
+      .)
+         if is_absolutepath "${other}"
+         then 
+            return 1
+         fi
+         return 0
+      ;;
+    esac
+
+    case "${other}" in
+         ${filepath})
+             return 0
+         ;;
+         ${filepath}/*)
+             return 0
+         ;;
+         *)
+             return 1
+         ;;
+    esac
+}
+
+fi
+:
+if ! [ ${MULLE_FILE_SH+x} ]
+then
+MULLE_FILE_SH='included'
+
+[ -z "${MULLE_BASHGLOBAL_SH}" ] && _fatal "mulle-bashglobal.sh must be included before mulle-file.sh"
+[ -z "${MULLE_PATH_SH}" ]       && _fatal "mulle-path.sh must be included before mulle-file.sh"
+[ -z "${MULLE_EXEKUTOR_SH}" ]   && _fatal "mulle-exekutor.sh must be included before mulle-file.sh"
+
+
+
+function mkdir_if_missing()
+{
+   [ -z "$1" ] && _internal_fail "empty path"
+
+   if [ -d "$1" ]
+   then
+      return 0
+   fi
+
+   local rval
+
+   exekutor mkdir -p "$1"
+   rval="$?"
+
+   if [ "${rval}" -eq 0 ]
+   then
+      log_fluff "Created directory \"$1\" (${PWD#"${MULLE_USER_PWD}/"})"
+      return 0
+   fi
+
+   if [ -L "$1" ]
+   then
+      r_resolve_symlinks "$1"
+      if [ ! -d "${RVAL}" ]
+      then
+         fail "failed to create directory \"$1\" as a symlink to a file is there"
+      fi
+      return 0
+   fi
+
+   if [ -f "$1" ]
+   then
+      fail "failed to create directory \"$1\" because a file is there"
+   fi
+   fail "failed to create directory \"$1\" from $PWD ($rval)"
+}
+
+
+function r_mkdir_parent_if_missing()
+{
+   local filename="$1"
+
+   local dirname
+
+   r_dirname "${filename}"
+   dirname="${RVAL}"
+
+   case "${dirname}" in
+      ""|\.)
+         return 1
+      ;;
+   esac
+
+   mkdir_if_missing "${dirname}"
+   RVAL="${dirname}"
+   return 0
+}
+
+
+function dir_is_empty()
+{
+   local directory="$1"
+
+   [ -z "${directory}" ] && _internal_fail "empty path"
+
+   if [ ! -d "${directory}" ]
+   then
+      return 2
+   fi
+
+   local empty
+
+   empty="`ls -A "${directory}" 2> /dev/null`"
+   [ -z "$empty" ]
+}
+
+
+rmdir_safer()
+{
+   local directory="$1"
+
+   [ -z "${directory}" ] && _internal_fail "empty path"
+
+   [ $"PWD" = "${directory}" ] && fail "Refuse to remove PWD"
+
+   if [ -d "${directory}" ]
+   then
+      r_assert_sane_path "${directory}"
+
+      case "${MULLE_UNAME}" in
+         'android'|'sunos')
+            exekutor chmod -R ugo+wX "${RVAL}" 2> /dev/null
+         ;;
+         *)
+            exekutor chmod -R ugo+wX "${RVAL}"  || fail "Failed to make \"${RVAL}\" writable"
+         ;;
+      esac
+      exekutor rm -rf "${RVAL}"  >&2 || fail "failed to remove \"${RVAL}\""
+   fi
+}
+
+
+rmdir_if_empty()
+{
+   local directory="$1"
+
+   [ -z "${directory}" ] && _internal_fail "empty path"
+
+   if dir_is_empty "${directory}"
+   then
+      exekutor rmdir "${directory}"  >&2 || fail "failed to remove $1"
+   fi
+}
+
+
+_create_file_if_missing()
+{
+   local filepath="$1" ; shift
+
+   [ -z "${filepath}" ] && _internal_fail "empty path"
+
+   if [ -f "${filepath}" ]
+   then
+      return
+   fi
+
+   local directory
+
+   r_dirname "${filepath}"
+   directory="${RVAL}"
+
+   if [ ! -z "${directory}" ]
+   then
+      mkdir_if_missing "${directory}"
+   fi
+
+   log_fluff "Creating \"${filepath}\""
+   if [ ! -z "$*" ]
+   then
+      redirect_exekutor "${filepath}" printf "%s\n" "$*" || fail "failed to create \"{filepath}\""
+   else
+      exekutor touch "${filepath}"  || fail "failed to create \"${filepath}\""
+   fi
+}
+
+
+function create_file_if_missing()
+{
+   _create_file_if_missing "$1" "# intentionally blank file"
+}
+
+
+function merge_line_into_file()
+{
+  local line="$1"
+  local filepath="$2"
+
+  if grep -F -q -x "${line}" "${filepath}" > /dev/null 2>&1
+  then
+     return
+  fi
+  redirect_append_exekutor "${filepath}" printf "%s\n" "${line}"
+}
+
+
+_remove_file_if_present()
+{
+   [ -z "$1" ] && _internal_fail "empty path"
+
+   if [ "${MULLE_FLAG_EXEKUTOR_DRY_RUN:-}" = 'YES' ]
+   then
+      return
+   fi
+
+   if ! rm -f "$1" 2> /dev/null
+   then
+      case "${MULLE_UNAME}" in
+         'sunos')
+            exekutor chmod u+w "$1" 2> /dev/null
+         ;;
+         *)
+            exekutor chmod u+w "$1"  || fail "Failed to make $1 writable"
+         ;;
+      esac
+      exekutor rm -f "$1"      || fail "failed to remove \"$1\""
+   else
+      exekutor_trace "exekutor_print" rm -f "$1"
+   fi
+   return 0
+}
+
+
+remove_file_if_present()
+{
+   if [ -e "$1"  -o -L "$1" ] && _remove_file_if_present "$1"
+   then
+      log_fluff "Removed \"${1#${PWD}/}\" (${PWD#"${MULLE_USER_PWD}/"})"
+      return 0
+   fi
+   return 1
+}
+
+
+r_uuidgen()
+{
+   local i
+
+   local -a v
+
+   if [ ${ZSH_VERSION+x} ]
+   then
+      if [ -e "/dev/urandom" ]
+      then
+         RANDOM="`od -vAn -N4 -t u4 < /dev/urandom`"
+      else
+         if [ -e "/dev/random" ]
+         then
+            RANDOM="`od -vAn -N4 -t u4 < /dev/random`"
+         else
+            sleep 1 # need something unique between two calls
+            RANDOM="`date +%s`"
+         fi
+      fi
+   fi
+
+   for i in 1 2 3 4 5 6 7 8
+   do
+      v[$i]=$(($RANDOM+$RANDOM))
+   done
+   v[4]=$((${v[4]}|16384))
+   v[4]=$((${v[4]}&20479))
+   v[5]=$((${v[5]}|32768))
+   v[5]=$((${v[5]}&49151))
+   printf -v RVAL "%04x%04x-%04x-%04x-%04x-%04x%04x%04x" \
+                  ${v[1]} ${v[2]} ${v[3]} ${v[4]} \
+                  ${v[5]} ${v[6]} ${v[7]} ${v[8]}
+}
+
+
+_make_tmp_in_dir_mktemp()
+{
+   local tmpdir="$1"
+   local name="$2"
+   local filetype="$3"
+   local extension="$4"
+
+   case "${filetype}" in
+      *d*)
+         TMPDIR="${tmpdir}" exekutor mktemp -d "${name}-XXXXXXXX${extension}"
+      ;;
+
+      *)
+         TMPDIR="${tmpdir}" exekutor mktemp "${name}-XXXXXXXX${extension}"
+      ;;
+   esac
+}
+
+
+r_make_tmpname_in_dir_uuidgen()
+{
+   local UUIDGEN="$1"; shift
+
+   local tmpdir="$1"
+   local name="$2"
+   local extension="${3:-}"
+
+   local uuid
+   local fluke
+
+   fluke=0
+   RVAL=''
+
+   while :
+   do
+      if [ -z "${UUIDGEN}" ]
+      then
+         r_uuidgen
+         uuid="${RVAL}"
+      else
+         uuid="`${UUIDGEN}`" || fail "uuidgen failed"
+      fi
+
+      RVAL="${tmpdir}/${name}-${uuid}${extension}"
+      if [ ! -e "${RVAL}" ]
+      then
+         return
+      fi
+
+      fluke=$((fluke + 1 ))
+      if [ "${fluke}" -gt 20 ]
+      then
+         fail "Could not (even repeatedly) create unique \"${RVAL}\""
+      fi
+   done
+}
+
+
+_r_make_tmp_in_dir_uuidgen()
+{
+   local UUIDGEN="$1"; shift
+
+   local tmpdir="$1"
+   local name="$2"
+   local filetype="${3:-f}"
+   local extension="${4:-}"
+
+   local MKDIR
+   local TOUCH
+
+   MKDIR="$(command -v mkdir)"
+   TOUCH="$(command -v touch)"
+
+   [ -z "${MKDIR}" ] && fail "No \"mkdir\" found in PATH ($PATH)"
+   [ -z "${TOUCH}" ] && fail "No \"touch\" found in PATH ($PATH)"
+
+   local uuid
+   local fluke
+
+   fluke=0
+   RVAL=''
+
+   while :
+   do
+      if [ -z "${UUIDGEN}" ]
+      then
+         r_uuidgen
+         uuid="${RVAL}"
+      else
+         uuid="`${UUIDGEN}`" || fail "uuidgen failed"
+      fi
+
+      RVAL="${tmpdir}/${name}-${uuid}${extension}"
+      if [ -e "${RVAL}" ]
+      then
+         fluke=$((fluke + 1 ))
+         if [ "${fluke}" -gt 20 ]
+         then
+            fail "Could not create \"${RVAL}\" (${filetype:-f})"
+         fi
+         continue
+      fi
+
+      case "${filetype}" in
+         *d*)
+            rexekutor "${MKDIR}" "${RVAL}" 2> /dev/null && return 0
+         ;;
+
+         *)
+            rexekutor "${TOUCH}" "${RVAL}" 2> /dev/null && return 0
+         ;;
+      esac
+   done
+}
+
+
+_r_make_tmp_in_dir()
+{
+   local tmpdir="$1"
+   local name="$2"
+   local filetype="${3:-f}"
+
+   mkdir_if_missing "${tmpdir}"
+
+   [ ! -w "${tmpdir}" ] && fail "${tmpdir} does not exist or is not writable"
+
+   name="${name:-${MULLE_EXECUTABLE_NAME}}"
+   name="${name:-mulle}"
+
+   extension="${extension#\.}"
+   if [ ! -z "${extension}" ]
+   then
+      extension=".${extension}"
+   fi 
+
+   _r_make_tmp_in_dir_uuidgen "" "${tmpdir}" "${name}" "${filetype}" "${extension}"
+   return $?
+}
+
+
+function r_make_tmp()
+{
+   local name="$1"
+   local filetype="${2:-f}"
+   local extension="$3"
+
+   local tmpdir
+
+   tmpdir=
+   case "${MULLE_UNAME}" in
+      darwin)
+      ;;
+
+      *)
+         tmpdir="${TMP:-${TMPDIR:-${TMP_DIR:-}}}"
+         r_filepath_cleaned "${tmpdir}"
+         tmpdir="${RVAL}"
+      ;;
+   esac
+   tmpdir="${tmpdir:-/tmp}"
+
+   _r_make_tmp_in_dir "${tmpdir}" "${name}" "${filetype}" "${extension}"
+}
+
+
+function r_make_tmp_file()
+{
+   r_make_tmp "$1" "f" "$2"
+}
+
+
+function r_make_tmp_directory()
+{
+   r_make_tmp "$1" "d" "$2"
+}
+
+
+
+function r_resolve_all_path_symlinks()
+{
+   local filepath="$1"
+
+   local resolved
+
+   r_resolve_symlinks "${filepath}"
+   resolved="${RVAL}"
+
+   local filename
+   local directory
+
+   r_dirname "${resolved}"
+   directory="${RVAL}"
+
+   case "${directory}" in
+      ''|'/')
+         RVAL="${resolved}"
+      ;;
+
+      *)
+         r_basename "${resolved}"
+         filename="${RVAL}"
+         r_resolve_all_path_symlinks "${directory}"
+         r_filepath_concat "${RVAL}" "${filename}"
+      ;;
+   esac
+}
+
+
+
+_r_canonicalize_dir_path()
+{
+   RVAL="`
+   (
+     cd "$1" 2>/dev/null &&
+     pwd -P
+   )`"
+}
+
+
+_r_canonicalize_file_path()
+{
+   local component
+   local directory
+
+   r_basename "$1"
+   component="${RVAL}"
+   r_dirname "$1"
+   directory="${RVAL}"
+
+   if ! _r_canonicalize_dir_path "${directory}"
+   then
+      return 1
+   fi
+
+   RVAL="${RVAL}/${component}"
+   return 0
+}
+
+
+function r_canonicalize_path()
+{
+   [ -z "$1" ] && _internal_fail "empty path"
+
+   r_resolve_symlinks "$1"
+   if [ -d "${RVAL}" ]
+   then
+      _r_canonicalize_dir_path "${RVAL}"
+   else
+      _r_canonicalize_file_path "${RVAL}"
+   fi
+}
+
+
+function r_physicalpath()
+{
+   if [ -d "$1" ]
+   then
+      RVAL="`( cd "$1" && pwd -P ) 2>/dev/null `"
+      return $?
+   fi
+
+   local dir
+   local file
+
+   r_dirname "$1"
+   dir="${RVAL}"
+
+   r_basename "$1"
+   file="${RVAL}"
+
+   if ! r_physicalpath "${dir}"
+   then
+      RVAL=
+      return 1
+   fi
+
+   r_filepath_concat "${RVAL}" "${file}"
+}
+
+
+function r_realpath()
+{
+   [ -e "$1" ] || fail "only use r_realpath on existing files ($1)"
+
+   r_resolve_symlinks "$1"
+   r_canonicalize_path "${RVAL}"
+}
+
+function create_symlink()
+{
+   local source="$1"       # URL of the clone
+   local symlink="$2"      # symlink of this clone (absolute or relative to $PWD)
+   local absolute="${3:-NO}"
+   local hardlink="${4:-NO}"
+
+   [ -e "${source}" ]     || fail "${C_RESET}${C_BOLD}${source}${C_ERROR} does not exist (${PWD#"${MULLE_USER_PWD}/"})"
+   [ ! -z "${absolute}" ] || fail "absolute must be YES or NO"
+
+   if [ "${MULLE_FLAG_EXEKUTOR_DRY_RUN:-}" = 'YES' ]
+   then
+      return
+   fi
+
+   r_absolutepath "${source}"
+   r_realpath "${RVAL}"
+   source="${RVAL}"        # resolve symlinks
+
+
+   local directory
+   r_dirname "${symlink}"
+   directory="${RVAL}"
+
+   mkdir_if_missing "${directory}"
+   r_realpath "${directory}"
+   directory="${RVAL}"  # resolve symlinks
+
+   if [ "${absolute}" = 'NO' ]
+   then
+      r_symlink_relpath "${source}" "${directory}"
+      source="${RVAL}"
+   fi
+
+   local oldlink
+
+   oldlink=""
+   if [ -L "${symlink}" ]
+   then
+      oldlink="`readlink "${symlink}"`"
+   fi
+
+   local flags
+
+   flags="-s -f"
+   if [ "${hardlink}" = 'YES' ]
+   then
+      flags="-f"
+   fi
+
+   if [ -z "${oldlink}" -o "${oldlink}" != "${source}" ]
+   then
+      exekutor ln ${flags} "${source}" "${symlink}" >&2 || \
+         fail "failed to setup symlink \"${symlink}\" (to \"${source}\")"
+   fi
+}
+
+
+
+function modification_timestamp()
+{
+   case "${MULLE_UNAME}" in
+      darwin|*bsd|dragonfly)
+         stat -f "%m" "$1"
+      ;;
+
+      *)
+         stat --printf "%Y\n" "$1"
+      ;;
+   esac
+}
+
+function timestamp_now()
+{
+   date '+%s'
+}
+
+function file_devicenumber()
+{
+   case "${MULLE_UNAME}" in
+      darwin|*bsd|dragonfly)
+         stat -f "%d" "$1"
+      ;;
+
+      *)
+         stat -c "%d" "$1" # returns the decimal device number
+      ;;
+   esac
+}
+
+function r_file_type()
+{
+
+   if [ -L "$1" ]
+   then
+      if [ -d "$1" ]
+      then
+         RVAL="D"
+         return
+      fi
+      RVAL="F"
+      return
+   fi
+
+   if [ -f "$1" ]
+   then
+      RVAL="f"
+      return
+   fi
+
+   if [ -d "$1" ]
+   then
+      RVAL="d"
+      return
+   fi
+
+   if [ ! -e "$1" ]
+   then
+      RVAL=
+      return 1
+   fi
+
+   RVAL="s"
+   return
+}
+
+
+
+
+function lso()
+{
+   ls -ald "$@" | \
+   awk '{k=0;for(i=0;i<=8;i++)k+=((substr($1,i+2,1)~/[rwx]/)*2^(8-i));if(k)printf(" %0o ",k);print }' | \
+   awk '{print $1}'
+}
+
+
+
+function file_is_binary()
+{
+   local result
+
+   case "${MULLE_UNAME}" in
+      sunos)
+         result="`file "$1"`"
+         case "${result}" in
+            *\ text*|*\ script|*\ document)
+               return 1
+            ;;
+         esac
+         return 0
+      ;;
+   esac
+
+   result="`file -b --mime-encoding "$1"`"
+   [ "${result}" = "binary" ]
+}
+
+
+function file_size_in_bytes()
+{
+   if [ ! -f "$1" ]
+   then
+      return 1
+   fi
+
+   case "${MULLE_UNAME}" in
+      darwin|*bsd|dragonfly)
+         stat -f '%z' "$1"
+      ;;
+
+      *)
+         stat -c '%s' -- "$1"
+      ;;
+   esac
+}
+
+
+
+function dir_has_files()
+{
+   local dirpath="$1"; shift
+
+   case "${MULLE_UNAME}" in
+      sunos)
+         local lines
+
+         if ! lines="`( rexekutor cd "${dirpath}" && rexekutor ls -1 ) 2> /dev/null `"
+         then
+            return 1
+         fi
+
+         local line
+
+         .foreachline line in ${lines}
+         .do
+            case "${line}" in
+               '.'|'..')
+                  .continue
+               ;;
+
+               *)
+                  case "$1" in
+                     f)
+                        [ ! -f "${dirpath}/${line}" ] && .continue
+                     ;;
+
+                     d)
+                        [ ! -d "${dirpath}/${line}" ] && .continue
+                     ;;
+
+                     l)
+                        [ ! -L "${dirpath}/${line}" ] && .continue
+                     ;;
+                  esac
+
+                  return 0
+               ;;
+            esac
+         .done
+         return 1
+      ;;
+   esac
+
+   local flags
+
+   case "$1" in
+      f)
+         flags="-type f"
+         shift
+      ;;
+
+      d)
+         flags="-type d"
+         shift
+      ;;
+
+      l)
+         flags="-type l"
+         shift
+      ;;
+   esac
+
+   local empty
+
+   empty="`rexekutor find "${dirpath}" -xdev \
+                                       -mindepth 1 \
+                                       -maxdepth 1 \
+                                       -name "[a-zA-Z0-9_-]*" \
+                                       ${flags} \
+                                       "$@" \
+                                       -print \
+                                       -quit 2> /dev/null`"
+   [ ! -z "$empty" ]
+}
+
+
+function dir_list_files()
+{
+   local directory="$1"
+   local pattern="${2:-*}"
+   local flagchars="${3:-}"
+
+   [ ! -z "${directory}" ] || _internal_fail "directory is empty"
+
+   log_setting "directory=${directory}"
+   log_setting "pattern=${pattern}"
+   log_setting "flagchars=${flagchars}"
+
+   case "${MULLE_UNAME}" in
+      sunos)
+         local line
+         local dirpath
+         local lines
+
+         for dirpath in ${directory}
+         do
+            lines="`( cd "${dirpath}"; ls -1 ) 2> /dev/null`"
+
+            .foreachline line in ${lines}
+            .do
+               case "${line}" in
+                  '.'|'..')
+                     .continue
+                  ;;
+
+                  *)
+                     if [[ $line != ${pattern} ]]
+                     then
+                        continue
+                     fi
+
+                     local match 
+                     
+                     match='YES'
+                     if [ ! -z "${flagchars}" ]
+                     then
+                        match='NO'
+                     fi
+
+                     case "${flagchars}" in
+                        *f*)
+                           [ -f "${dirpath}/${line}" ] && match='YES'
+                        ;;
+                     esac
+                     case "${flagchars}" in
+                        *d*)
+                           [ -d "${dirpath}/${line}" ] && match='YES'
+                        ;;
+                     esac
+                     case "${flagchars}" in
+                        *l*)
+                           [ ! -L "${dirpath}/${line}" ] && match='YES'
+                        ;;
+                     esac
+
+                     if [ "${match}" = 'NO' ]
+                     then
+                        .continue
+                     fi
+                  ;;
+               esac
+               printf "%s\n" "${dirpath}/${line}"
+            .done
+         done
+
+         IFS=' '$'\t'$'\n'
+         return
+      ;;
+   esac
+
+
+   local flags
+
+   if [ ! -z "${flagchars}" ]
+   then
+      case "${flagchars}" in
+         *f*)
+            flags="-type f"
+         ;;
+      esac
+      case "${flagchars}" in
+         *d*)
+            r_concat "${flags}" "-type d" " -o "
+            flags="${RVAL}"
+         ;;
+      esac
+      case "${flagchars}" in
+         *l*)
+            r_concat "${flags}" "-type l"  " -o "
+            flags="${RVAL}"
+         ;;
+      esac
+
+      flags="\\( ${flags} \\)"
+   fi
+
+   IFS=$'\n'
+   eval_rexekutor find ${directory} -xdev \
+                                    -mindepth 1 \
+                                    -maxdepth 1 \
+                                    -name "'${pattern:-*}'" \
+                                    ${flags} \
+                                    -print  | sort -n
+   IFS="${DEFAULT_IFS}"
+}
+
+
+function dirs_contain_same_files()
+{
+   log_entry "dirs_contain_same_files" "$@"
+
+   local etcdir="$1"
+   local sharedir="$2"
+
+   if [ ! -d "${etcdir}" -o ! -e "${etcdir}" ]
+   then
+      _internal_fail "Both directories \"${etcdir}\" and \"${sharedir}\" need to exist"
+   fi
+
+   etcdir="${etcdir%%/}"
+   sharedir="${sharedir%%/}"
+
+   local DIFF
+
+   if ! DIFF="`command -v diff`"
+   then
+      fail "diff command not installed"
+   fi
+
+   local etcfile
+   local sharefile
+   local filename 
+
+   .foreachline sharefile in `find ${sharedir} \! -type d -print`
+   .do
+      filename="${sharefile#${sharedir}/}"
+      etcfile="${etcdir}/${filename}"
+
+      if ! "${DIFF}" -b "${etcfile}" "${sharefile}" > /dev/null 2>&1
+      then
+         return 2
+      fi
+   .done
+
+   .foreachline etcfile in `find ${etcdir} \! -type d -print`
+   .do
+      filename="${etcfile#${etcdir}/}"
+      sharefile="${sharedir}/${filename}"
+
+      if [ ! -e "${sharefile}" ]
+      then
+         return 2
+      fi
+   .done
+
+   return 0
+}
+
+
+
+function inplace_sed()
+{
+   local tmpfile
+   local args
+   local filename
+
+   local rval 
+
+
+   case "${MULLE_UNAME}" in
+      darwin|*bsd|sun*|dragonfly)
+
+         while [ $# -ne 1 ]
+         do
+            r_escaped_shell_string "$1"
+            r_concat "${args}" "${RVAL}"
+            args="${RVAL}"
+            shift
+         done
+
+         filename="$1"
+
+         if [ ! -w "${filename}" ]
+         then
+            if [ ! -e "${filename}" ]
+            then
+               fail "\"${filename}\" does not exist"
+            fi
+            fail "\"${filename}\" is not writable"
+         fi
+
+
+         r_make_tmp
+         tmpfile="${RVAL}"
+
+         redirect_eval_exekutor "${tmpfile}" 'sed' "${args}" "'${filename}'"
+         rval=$?
+         if [ $rval -eq 0 ]
+         then
+            exekutor cp "${tmpfile}" "${filename}"
+         fi
+         _remove_file_if_present "${tmpfile}" # don't fluff log :)
+      ;;
+
+      *)
+         exekutor sed -i'' "$@"
+         rval=$?
+      ;;
+   esac
+
+   return ${rval}
+}
+
+fi
+:
+### << END OF mulle-bashfunctions-embed.sh <<
+
+print_flags()
+{
+   echo "   -f            : force operation"
+   echo "   --file <path> : Use custom todo file (default: ~/.mulle/etc/todo/todo.txt)"
+   echo "   --here        : Use custom todo file \$PWD/.mulle/etc/todo/todo.txt"
+
+   options_technical_flags_usage "         : "
+}
+
+
+usage()
+{
+   [ $# -ne 0 ] && log_error "$*"
+
+
+   cat <<EOF >&2
+Usage:
+   mulle-todo [flags] [command] [args...]
+
+   A simple todo list manager for your shell.
+
+Commands:
+   add <text>       : Add a new todo item
+   remove <number>  : Remove todo item by number
+   remove-all       : Remove all todo items
+   up <number>      : Move item up in the list
+   down <number>    : Move item down in the list
+   list [n]         : Display all (or n) todo items (default)
+   show [n]         : Display todos like motd (for shell login)
+   scan             : Scan source files for TODO comments (requires .mulle project)
+   scan-import      : Scan and import TODO comments into todo list
+   install          : Install shell integration into your profile
+
+   When listing with a limit [n], top 3 items stay in order,
+   remaining items are randomly selected to keep all todos visible.
+
+Flags:
+EOF
+   print_flags | LC_ALL=C sort >&2
+
+   exit 1
+}
+
+
+get_todofile()
+{
+   local tododir
+   
+   if [ -n "${MULLE_TODO_FILE}" ]
+   then
+      # Explicit --file flag takes precedence
+      RVAL="${MULLE_TODO_FILE}"
+   else
+      if [ "${MULLE_TODO_GLOBAL}" = "YES" ]
+      then
+         # -g/--global flag: use global location
+         tododir="${HOME}/.mulle/etc/todo"
+         RVAL="${tododir}/todo.txt"
+      else
+         if [ -d ".mulle/etc" ]
+         then
+            # Local .mulle/etc exists: use project-local location
+            tododir=".mulle/etc/todo"
+            RVAL="${tododir}/todo.txt"
+         else
+            # Default: global location
+            tododir="${HOME}/.mulle/etc/todo"
+            RVAL="${tododir}/todo.txt"
+         fi
+      fi
+   fi
+}
+
+calculate_visual_width()
+{
+   log_entry "calculate_visual_width" "$@"
+
+   # Locale-independent: operate on hex of full string and step by UTF-8 sequence length
+   local text="$1"
+   local hex
+   local visual_width
+   local pos
+   local hlen
+   local b1
+   local b2
+   local b3
+   local codepoint
+
+   hex=$(printf '%s' "${text}" | od -An -tx1 | tr -d ' \n')
+   visual_width=0
+   pos=0
+   hlen=${#hex}
+
+   while [ ${pos} -lt ${hlen} ]
+   do
+      b1=$((16#${hex:${pos}:2}))
+      if (( b1 < 0x80 )); then
+         visual_width=$((visual_width + 1))
+         pos=$((pos + 2))
+      else
+         if (( b1 >= 0xC0 && b1 <= 0xDF )); then
+            # 2-byte
+            visual_width=$((visual_width + 1))
+            pos=$((pos + 4))
+         else
+            if (( b1 >= 0xE0 && b1 <= 0xEF )); then
+               # 3-byte
+               b2=$((16#${hex:$((pos+2)):2}))
+               b3=$((16#${hex:$((pos+4)):2}))
+               codepoint=$(( ((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F) ))
+               if (( (codepoint >= 0x2300 && codepoint <= 0x24FF) ||
+                     (codepoint >= 0x2600 && codepoint <= 0x27BF) ||
+                     (codepoint >= 0x2B00 && codepoint <= 0x2BFF) )); then
+                  visual_width=$((visual_width + 2))
+               else
+                  visual_width=$((visual_width + 1))
+               fi
+               pos=$((pos + 6))
+            else
+               if (( b1 >= 0xF0 && b1 <= 0xF7 )); then
+                  # 4-byte (supplementary planes) => width 2
+                  visual_width=$((visual_width + 2))
+                  pos=$((pos + 8))
+               else
+                  # Fallback: advance one byte
+                  visual_width=$((visual_width + 1))
+                  pos=$((pos + 2))
+               fi
+            fi
+         fi
+      fi
+   done
+   RVAL="${visual_width}"
+}
+
+ensure_todofile()
+{
+   log_entry "ensure_todofile" "$@"
+
+   local todofile
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   r_mkdir_parent_if_missing "${todofile}"
+   
+   if [ ! -f "${todofile}" ]
+   then
+      redirect_exekutor "${todofile}" printf "%s\n" "# Todo List"
+   fi
+}
+
+read_todos()
+{
+   log_entry "read_todos" "$@"
+
+   local todofile
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   if [ ! -f "${todofile}" ]
+   then
+      RVAL=""
+      return
+   fi
+   
+   RVAL="$(rexekutor grep -v '^#' "${todofile}" 2>/dev/null || true)"
+}
+
+write_todos()
+{
+   log_entry "write_todos" "$@"
+
+   local todos="$1"
+   local todofile
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   ensure_todofile
+   
+   redirect_exekutor "${todofile}" printf "%s\n" "# Todo List" "${todos}"
+}
+
+todo_add()
+{
+   log_entry "todo_add" "$@"
+
+   local text="$*"
+   local todofile
+   
+   [ -z "${text}" ] && fail "No todo text provided"
+   
+   ensure_todofile
+   get_todofile
+   todofile="${RVAL}"
+   
+   redirect_append_exekutor "${todofile}" printf "%s\n" "${text}"
+   
+   log_info "Added: ${text}"
+}
+
+todo_remove()
+{
+   log_entry "todo_remove" "$@"
+
+   local number="$1"
+   local todos
+   local count
+   local i
+   local line
+   local todofile
+   
+   [ -z "${number}" ] && fail "No item number provided"
+   
+   read_todos
+   todos="${RVAL}"
+   
+   [ -z "${todos}" ] && fail "Todo list is empty"
+   
+   count=$(printf "%s\n" "${todos}" | wc -l)
+   
+   [ "${number}" -lt 1 ] && fail "Item number must be >= 1"
+   [ "${number}" -gt "${count}" ] && fail "Item number ${number} out of range (1-${count})"
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   (
+      printf "%s\n" "# Todo List"
+      i=1
+      while IFS= read -r line || [ -n "${line}" ]
+      do
+         if [ "${i}" -ne "${number}" ]
+         then
+            printf "%s\n" "${line}"
+         fi
+         i=$((i + 1))
+      done <<< "${todos}"
+   ) | redirect_exekutor "${todofile}" cat
+   
+   log_info "Removed item ${number}"
+}
+
+todo_remove_all()
+{
+   log_entry "todo_remove_all" "$@"
+
+   local todofile
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   if [ ! -f "${todofile}" ]
+   then
+      log_info "Todo list is already empty"
+      return
+   fi
+   
+   redirect_exekutor "${todofile}" printf "%s\n" "# Todo List"
+   log_info "Removed all todo items"
+}
+
+todo_move_up()
+{
+   log_entry "todo_move_up" "$@"
+
+   local number="$1"
+   local todos
+   local count
+   local i
+   local line
+   local prev_line
+   local todofile
+   
+   [ -z "${number}" ] && fail "No item number provided"
+   
+   read_todos
+   todos="${RVAL}"
+   
+   [ -z "${todos}" ] && fail "Todo list is empty"
+   
+   count=$(printf "%s\n" "${todos}" | wc -l)
+   
+   [ "${number}" -lt 2 ] && fail "Item ${number} cannot be moved up"
+   [ "${number}" -gt "${count}" ] && fail "Item number ${number} out of range (1-${count})"
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   (
+      printf "%s\n" "# Todo List"
+      i=1
+      prev_line=""
+      while IFS= read -r line || [ -n "${line}" ]
+      do
+         if [ "${i}" -eq $((number - 1)) ]
+         then
+            prev_line="${line}"
+         else
+            if [ "${i}" -eq "${number}" ]
+            then
+               printf "%s\n" "${line}"
+               printf "%s\n" "${prev_line}"
+            else
+               printf "%s\n" "${line}"
+            fi
+         fi
+         i=$((i + 1))
+      done <<< "${todos}"
+   ) | redirect_exekutor "${todofile}" cat
+   
+   log_info "Moved item ${number} up"
+}
+
+todo_move_down()
+{
+   log_entry "todo_move_down" "$@"
+
+   local number="$1"
+   local todos
+   local count
+   local i
+   local todofile
+   local -a lines_arr
+   
+   [ -z "${number}" ] && fail "No item number provided"
+   
+   read_todos
+   todos="${RVAL}"
+   
+   [ -z "${todos}" ] && fail "Todo list is empty"
+   
+   count=$(printf "%s\n" "${todos}" | wc -l)
+   
+   [ "${number}" -lt 1 ] && fail "Item number must be >= 1"
+   [ "${number}" -ge "${count}" ] && fail "Item ${number} cannot be moved down"
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   IFS=$'\n' read -d '' -ra lines_arr <<< "${todos}" || true
+   
+   (
+      printf "%s\n" "# Todo List"
+      for ((i=0; i<${#lines_arr[@]}; i++))
+      do
+         if [ $((i + 1)) -eq "${number}" ]
+         then
+            printf "%s\n" "${lines_arr[$((i + 1))]}"
+            printf "%s\n" "${lines_arr[${i}]}"
+            i=$((i + 1))
+         else
+            printf "%s\n" "${lines_arr[${i}]}"
+         fi
+      done
+   ) | redirect_exekutor "${todofile}" cat
+   
+   log_info "Moved item ${number} down"
+}
+
+todo_list()
+{
+   log_entry "todo_list" "$@"
+
+   local todos
+   local i
+   local line
+   local limit="${1}"
+   local count
+   local -a all_lines
+   local -a display_lines
+   local todofile
+   local -a top_three
+   local -a rest
+   local -a shuffled
+   local oldifs
+   local remaining
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   read_todos
+   todos="${RVAL}"
+   
+   if [ -z "${todos}" ]
+   then
+      if [ -d ".mulle/etc" ] && [ "${MULLE_TODO_GLOBAL}" != "YES" ]
+      then
+         log_info "No todos in this project yet. Add one with: mulle-todo add <text>"
+      else
+         log_info "No todos yet. Add one with: mulle-todo add <text>"
+      fi
+      return
+   fi
+   
+   IFS=$'\n' read -d '' -ra all_lines <<< "${todos}" || true
+   count=${#all_lines[@]}
+   
+   if [ -n "${limit}" ] && [ "${limit}" -lt "${count}" ]
+   then
+      # Handle small limits
+      if [ "${limit}" -le 3 ]
+      then
+         # Just show the first N items
+         for ((i=0; i<limit && i<count; i++))
+         do
+            printf "%3d. %s\n" "$((i + 1))" "${all_lines[${i}]}"
+         done
+         printf "\n... showing %d of %d items\n" "${limit}" "${count}"
+         return
+      fi
+      
+      # Keep top 3, randomize the rest
+      top_three=()
+      rest=()
+      shuffled=()
+      
+      # Get top 3
+      for ((i=0; i<3 && i<count; i++))
+      do
+         top_three+=("${all_lines[${i}]}")
+      done
+      
+      # Get remaining items
+      for ((i=3; i<count; i++))
+      do
+         rest+=("${all_lines[${i}]}")
+      done
+      
+      # Shuffle remaining items
+      if [ ${#rest[@]} -gt 0 ]
+      then
+         oldifs="${IFS}"
+         IFS=$'\n'
+         shuffled=($(rexekutor printf "%s\n" "${rest[@]}" | rexekutor shuf))
+         IFS="${oldifs}"
+      fi
+      
+      # Build display list
+      display_lines=("${top_three[@]}")
+      
+      remaining=$((limit - 3))
+      if [ "${remaining}" -gt 0 ] && [ ${#shuffled[@]} -gt 0 ]
+      then
+         for ((i=0; i<remaining && i<${#shuffled[@]}; i++))
+         do
+            display_lines+=("${shuffled[${i}]}")
+         done
+      fi
+      
+      # Display
+      for ((i=0; i<${#display_lines[@]}; i++))
+      do
+         printf "%3d. %s\n" "$((i + 1))" "${display_lines[${i}]}"
+      done
+      
+      if [ "${limit}" -lt "${count}" ]
+      then
+         printf "\n... showing %d of %d items (top 3 + random %d)\n" "${limit}" "${count}" "$((limit - 3))"
+      fi
+   else
+      # Display all
+      i=1
+      for line in "${all_lines[@]}"
+      do
+         printf "%3d. %s\n" "${i}" "${line}"
+         i=$((i + 1))
+      done
+   fi
+}
+
+todo_show()
+{
+   log_entry "todo_show" "$@"
+
+   local todos
+   local i
+   local line
+   local limit="${1}"
+   local count
+   local -a all_lines
+   local -a display_lines
+   local max_width
+   local term_width
+   local box_width
+   local todofile
+   local -a top_three
+   local -a rest
+   local -a shuffled
+   local oldifs
+   local remaining
+   local num_items
+   local num_width
+   local prefix_width
+   local visual_len
+   local total_width
+   local term_cols
+   local max_box_width
+   local allowed_content_max
+   local content_width
+   local title
+   local title_visual_width
+   local total_title_width
+   local left_bg
+   local right_bg
+   local item_num
+   local item_text
+   local num_digits
+   local text_visual_width
+   local item_prefix_width
+   local needed_width
+   local max_text_width
+   local keep_chars
+   local padding_right
+   local info_text
+   local random_count
+   local info_visual_len
+   local info_padding
+
+   get_todofile
+   todofile="${RVAL}"
+   
+   read_todos
+   todos="${RVAL}"
+   
+   if [ -z "${todos}" ]
+   then
+      if [ -d ".mulle/etc" ] && [ "${MULLE_TODO_GLOBAL}" != "YES" ]
+      then
+         log_info "No todos in this project yet. Add one with: mulle-todo add <text>"
+      else
+         log_info "No todos yet. Add one with: mulle-todo add <text>"
+      fi
+      return
+   fi
+   
+   # Use mulle-bashfunctions color variables (support NO_COLOR)
+   
+   IFS=$'\n' read -d '' -ra all_lines <<< "${todos}" || true
+   count=${#all_lines[@]}
+   
+   # Determine which items to display
+   if [ -n "${limit}" ] && [ "${limit}" -lt "${count}" ]
+   then
+      # Handle small limits
+      if [ "${limit}" -le 3 ]
+      then
+         for ((i=0; i<limit && i<count; i++))
+         do
+            display_lines+=("${all_lines[${i}]}")
+         done
+      else
+         # Keep top 3, randomize the rest
+         top_three=()
+         rest=()
+         shuffled=()
+         
+         for ((i=0; i<3 && i<count; i++))
+         do
+            top_three+=("${all_lines[${i}]}")
+         done
+         
+         for ((i=3; i<count; i++))
+         do
+            rest+=("${all_lines[${i}]}")
+         done
+         
+         if [ ${#rest[@]} -gt 0 ]
+         then
+            oldifs="${IFS}"
+            IFS=$'\n'
+            shuffled=($(rexekutor printf "%s\n" "${rest[@]}" | rexekutor shuf))
+            IFS="${oldifs}"
+         fi
+         
+         display_lines=("${top_three[@]}")
+         
+         remaining=$((limit - 3))
+         if [ "${remaining}" -gt 0 ] && [ ${#shuffled[@]} -gt 0 ]
+         then
+            for ((i=0; i<remaining && i<${#shuffled[@]}; i++))
+            do
+               display_lines+=("${shuffled[${i}]}")
+            done
+         fi
+      fi
+   else
+      display_lines=("${all_lines[@]}")
+   fi
+   
+   # Calculate max content width considering number width and emoji
+   # Number width: "▸ NNN. " where NNN can be 1-3 digits
+   max_width=0
+   num_items=${#display_lines[@]}
+   num_width=${#num_items}  # digits in highest number
+   prefix_width=$((num_width + 4))  # "▸ N. " minimum
+   
+   for line in "${display_lines[@]}"
+   do
+      calculate_visual_width "${line}"
+      visual_len="${RVAL}"
+      total_width=$((prefix_width + visual_len))
+      
+      [ ${total_width} -gt ${max_width} ] && max_width=${total_width}
+   done
+   
+   log_setting "data line content width (prefix+text): ${max_width}"
+   
+   # Set box width
+   term_cols=$(rexekutor tput cols 2>/dev/null); [ -z "${term_cols}" ] && term_cols=80
+   # Total width = corners (2) + horizontal lines (box_width)
+   # So: corners + box_width <= term_cols
+   # Therefore: box_width <= term_cols - 2
+   max_box_width=$((term_cols - 2))
+   # Interior content (between borders) = box_width - 2
+   allowed_content_max=$((max_box_width - 2))
+   content_width=${max_width}
+   if [ ${content_width} -gt ${allowed_content_max} ]; then
+      content_width=${allowed_content_max}
+   fi
+   box_width=$((content_width + 2))
+   
+   log_setting "box_width (━ characters): ${box_width}"
+   log_setting "content_width (available for data): ${content_width}"
+   
+   # Draw box with heavy style
+   printf "%b" "${C_CYAN}┏"
+   printf '━%.0s' $(seq 1 ${box_width})
+   printf "%b\n" "┓${C_RESET}"
+   
+   # Title - "📋 TODO" with background pattern
+   title="📋 TODO"
+   calculate_visual_width "${title}"
+   title_visual_width="${RVAL}"
+   
+   log_setting "title visual width (just emoji+text): ${title_visual_width}"
+   
+   # Total needed: space + title + space  
+   total_title_width=$((1 + title_visual_width + 1))
+   
+   log_setting "title total width (with spaces): ${total_title_width}"
+   
+   # Remaining space for background
+   remaining=$((box_width - total_title_width))
+   left_bg=$((remaining / 2))
+   right_bg=$((remaining - left_bg))
+   
+   log_setting "title background: left=${left_bg}, right=${right_bg}"
+   printf "%b" "${C_CYAN}┃"
+   # Left background (keep color on)
+   printf "░%.0s" $(seq 1 ${left_bg})
+   printf "%b" "${C_RESET} ${C_YELLOW}${title}${C_RESET} ${C_CYAN}"
+   # Right background
+   printf "░%.0s" $(seq 1 ${right_bg})
+   printf "%b\n" "┃${C_RESET}"
+   
+   # Separator
+   printf "%b" "${C_CYAN}┣"
+   printf '━%.0s' $(seq 1 ${box_width})
+   printf "%b\n" "┫${C_RESET}"
+   
+   # Items
+   for ((i=0; i<${#display_lines[@]}; i++))
+   do
+      item_num=$((i + 1))
+      item_text="${display_lines[${i}]}"
+      
+      # Calculate actual visual width needed for this item
+      num_digits=${#item_num}
+      calculate_visual_width "${item_text}"
+      text_visual_width="${RVAL}"
+      item_prefix_width=$((num_digits + 4))  # "▸ N. "
+      needed_width=$((item_prefix_width + text_visual_width))
+      
+      # Truncate if too long
+      max_text_width=$((box_width - 1 - item_prefix_width))
+      if [ ${text_visual_width} -gt ${max_text_width} ]; then
+         # Rough truncation
+         keep_chars=$((max_text_width - 4))
+         item_text="${item_text:0:${keep_chars}}..."
+         calculate_visual_width "${item_text}"
+         text_visual_width="${RVAL}"
+      fi
+      
+      padding_right=$((box_width - (1 + item_prefix_width + text_visual_width)))
+      [ ${padding_right} -lt 0 ] && padding_right=0
+      
+      printf "%b" "${C_CYAN}┃${C_RESET} "
+      printf "%b" "${C_GREEN}▸${C_RESET} ${C_BLUE}${item_num}.${C_RESET} ${item_text}"
+      printf ' %.0s' $(seq 1 ${padding_right})
+      printf "%b\n" "${C_CYAN}┃${C_RESET}"
+   done
+   
+   # Show truncation info if applicable
+   if [ -n "${limit}" ] && [ "${limit}" -lt "${count}" ]
+   then
+      printf "%b" "${C_CYAN}┣"
+      printf '━%.0s' $(seq 1 ${box_width})
+      printf "%b\n" "┫${C_RESET}"
+      
+      if [ "${limit}" -le 3 ]; then
+         info_text="Showing ${limit} of ${count} items"
+      else
+         random_count=${#shuffled[@]}
+         [ ${random_count} -gt $((limit - 3)) ] && random_count=$((limit - 3))
+         info_text="Showing ${limit} of ${count} (top 3 + ${random_count} random)"
+      fi
+      
+      # "✨ " is 3 visual width (emoji=2, space=1)
+      info_visual_len=$((${#info_text} + 3))
+      info_padding=$(( (box_width - info_visual_len) / 2 ))
+      
+      printf "%b" "${C_CYAN}┃${C_RESET}"
+      printf ' %.0s' $(seq 1 ${info_padding})
+      printf "%b" "${C_YELLOW}✨ ${info_text}${C_RESET}"
+      printf ' %.0s' $(seq 1 $((box_width - info_visual_len - info_padding)))
+      printf "%b\n" "${C_CYAN}┃${C_RESET}"
+   fi
+   
+   # Bottom border
+   printf "%b" "${C_CYAN}┗"
+   printf '━%.0s' $(seq 1 ${box_width})
+   printf "%b\n" "┛${C_RESET}"
+}
+
+todo_scan()
+{
+   log_entry "todo_scan" "$@"
+
+   local import_mode="${1}"  # "import" or empty for display
+   local file
+   local -a files
+   local line
+   local in_todo
+   local todo_text
+   local todo_file
+   local todo_line
+   local count
+   local -a scanned_todos
+   local continuation
+
+   # Only works in mulle projects
+   if [ ! -d ".mulle" ]
+   then
+      fail "TODO scanning requires a .mulle directory (mulle project)"
+   fi
+
+   # Check if mulle-sde is available
+   if command -v mulle-sde >/dev/null 2>&1
+   then
+      log_info "Using mulle-sde to get file list..."
+      IFS=$'\n' read -d '' -ra files < <(rexekutor mulle-sde files --raw-files 2>/dev/null) || true
+   else
+      log_info "Using find to get file list (mulle-sde not found)..."
+      IFS=$'\n' read -d '' -ra files < <(rexekutor find . -type f \( -name "*.c" -o -name "*.h" -o -name "*.m" -o -name "*.sh" -o -name "*.py" -o -name "*.js" -o -name "*.java" \) ! -path "./.mulle/*" 2>/dev/null) || true
+   fi
+
+   if [ ${#files[@]} -eq 0 ]
+   then
+      log_warning "No files found to scan"
+      return
+   fi
+
+   # If in import mode, first collect all scanned TODOs
+   if [ "${import_mode}" = "import" ]
+   then
+      scanned_todos=()
+   fi
+
+   count=0
+   
+   # Process each file
+   for file in "${files[@]}"
+   do
+      [ ! -f "${file}" ] && continue
+
+      in_todo=0
+      todo_text=""
+      todo_file="${file}"
+      todo_line=""
+
+      while IFS= read -r line
+      do
+         # Check for TODO markers
+         if [[ "${line}" =~ (//|#|/\*)[[:space:]]*TODO:?[[:space:]]*(.*) ]]
+         then
+            # Start of a TODO
+            in_todo=1
+            todo_text="${BASH_REMATCH[2]}"
+            todo_line="${line}"
+
+            # Check if it's a single line TODO
+            if [[ "${line}" =~ ^[[:space:]]*(//|#)[[:space:]]*TODO ]]; then
+               # Single line comment style - continue reading consecutive comments
+               :
+            else
+               if [[ "${line}" =~ /\*.*\*/ ]]; then
+                  # Single line /* TODO */ style
+                  if [ "${import_mode}" = "import" ]
+                  then
+                     scanned_todos+=("📝 ${todo_file}: ${todo_text}")
+                  else
+                     printf "  📝 %s: %s\n" "${todo_file}" "${todo_text}"
+                  fi
+                  count=$((count + 1))
+                  in_todo=0
+                  todo_text=""
+               fi
+            fi
+         else
+            if [ ${in_todo} -eq 1 ]
+            then
+               # Check if line continues the comment
+               if [[ "${line}" =~ ^[[:space:]]*(//|#)[[:space:]]+(.*) ]]; then
+                  # Continuation of single-line comment style
+                  continuation="${BASH_REMATCH[2]}"
+                  if [ -n "${continuation}" ]; then
+                     todo_text="${todo_text} ${continuation}"
+                  fi
+               else
+                  if [[ "${line}" =~ ^[[:space:]]*\*[[:space:]]+(.*) ]]; then
+                     # Continuation of /* */ style comment
+                     continuation="${BASH_REMATCH[1]}"
+                     if [ -n "${continuation}" ]; then
+                        todo_text="${todo_text} ${continuation}"
+                     fi
+                  else
+                     if [[ "${line}" =~ \*/ ]]; then
+                        # End of /* */ style comment
+                        if [ "${import_mode}" = "import" ]
+                        then
+                           scanned_todos+=("📝 ${todo_file}: ${todo_text}")
+                        else
+                           printf "  📝 %s: %s\n" "${todo_file}" "${todo_text}"
+                        fi
+                        count=$((count + 1))
+                        in_todo=0
+                        todo_text=""
+                     else
+                        # Not a comment continuation - output current TODO
+                        if [ -n "${todo_text}" ]; then
+                           if [ "${import_mode}" = "import" ]
+                           then
+                              scanned_todos+=("📝 ${todo_file}: ${todo_text}")
+                           else
+                              printf "  📝 %s: %s\n" "${todo_file}" "${todo_text}"
+                           fi
+                           count=$((count + 1))
+                        fi
+                        in_todo=0
+                        todo_text=""
+                     fi
+                  fi
+               fi
+            fi
+         fi
+      done < "${file}"
+
+      # Output any remaining TODO
+      if [ ${in_todo} -eq 1 ] && [ -n "${todo_text}" ]
+      then
+         if [ "${import_mode}" = "import" ]
+         then
+            scanned_todos+=("📝 ${todo_file}: ${todo_text}")
+         else
+            printf "  📝 %s: %s\n" "${todo_file}" "${todo_text}"
+         fi
+         count=$((count + 1))
+      fi
+   done
+
+   if [ ${count} -eq 0 ]
+   then
+      log_info "No TODO comments found in source files"
+      if [ "${import_mode}" = "import" ]
+      then
+         # Still need to remove old scanned todos
+         remove_scanned_todos
+      fi
+      return
+   else
+      log_info "Found ${count} TODO comment(s)"
+   fi
+   
+   # Import mode: replace all scanned todos
+   if [ "${import_mode}" = "import" ]
+   then
+      local todofile
+      
+      log_verbose "Removing old scanned TODOs..."
+      remove_scanned_todos
+      
+      log_verbose "Adding ${#scanned_todos[@]} new scanned TODOs..."
+      ensure_todofile
+      get_todofile
+      todofile="${RVAL}"
+      
+      for todo_text in "${scanned_todos[@]}"
+      do
+         r_add_unique_line "${todofile}" "${todo_text}"
+         redirect_append_exekutor "${todofile}" printf "%s\n" "${RVAL}"
+      done
+      
+      log_info "Imported ${#scanned_todos[@]} TODO(s) from source files"
+   fi
+}
+
+remove_scanned_todos()
+{
+   log_entry "remove_scanned_todos" "$@"
+
+   local todofile
+   local todos
+   local line
+   local -a filtered_todos
+   
+   get_todofile
+   todofile="${RVAL}"
+   
+   [ ! -f "${todofile}" ] && return
+   
+   read_todos
+   todos="${RVAL}"
+   
+   [ -z "${todos}" ] && return
+   
+   # Keep only todos that don't start with 📝
+   filtered_todos=()
+   while IFS= read -r line
+   do
+      # Skip lines that start with 📝 (auto-generated from scan)
+      if [[ ! "${line}" =~ ^📝[[:space:]] ]]
+      then
+         filtered_todos+=("${line}")
+      fi
+   done <<< "${todos}"
+   
+   # Write back the filtered list
+   (
+      printf "%s\n" "# Todo List"
+      for line in "${filtered_todos[@]}"
+      do
+         printf "%s\n" "${line}"
+      done
+   ) | redirect_exekutor "${todofile}" cat
+}
+
+install_shell_integration()
+{
+   log_entry "install_shell_integration" "$@"
+
+   local shell_rc
+   local integration_code
+   local uname
+
+   # Detect platform
+   uname="${MULLE_UNAME:-$(uname)}"
+
+   case "${uname}" in
+      darwin|Darwin)
+         # macOS - zsh is default since Catalina
+         if [ -n "${ZSH_VERSION}" ] || [ "${SHELL}" = "/bin/zsh" ] || [ "${SHELL}" = "/usr/bin/zsh" ]
+         then
+            shell_rc="${HOME}/.zshrc"
+         else
+            shell_rc="${HOME}/.bash_profile"
+         fi
+      ;;
+
+      linux|Linux)
+         # Linux - check what shell is being used
+         if [ -n "${ZSH_VERSION}" ] || [ "${SHELL}" = "/bin/zsh" ] || [ "${SHELL}" = "/usr/bin/zsh" ]
+         then
+            shell_rc="${HOME}/.zshrc"
+         else
+            shell_rc="${HOME}/.bashrc"
+         fi
+      ;;
+
+      *)
+         # Default to .profile for unknown platforms
+         shell_rc="${HOME}/.profile"
+      ;;
+   esac
+
+   # Check if already installed
+   if [ -f "${shell_rc}" ] && rexekutor grep -q "mulle-todo show" "${shell_rc}" 2>/dev/null
+   then
+      log_info "Shell integration already installed in ${shell_rc}"
+      return 0
+   fi
+
+   # Integration code (without aliases)
+   integration_code='
+# mulle-todo - Display todos on shell login
+if command -v mulle-todo >/dev/null 2>&1; then
+    mulle-todo show 8 2>/dev/null
+fi
+'
+
+   # Backup existing rc file
+   if [ -f "${shell_rc}" ]
+   then
+      log_verbose "Backing up ${shell_rc} to ${shell_rc}.bak"
+      exekutor cp "${shell_rc}" "${shell_rc}.bak"
+   fi
+
+   # Append integration code
+   log_info "Installing shell integration into ${shell_rc}"
+   redirect_append_exekutor "${shell_rc}" printf "%s\n" "${integration_code}"
+
+   log_info "✅ Shell integration installed successfully!"
+   log_info "Open a new shell or run: source ${shell_rc}"
+}
+
+main()
+{
+   log_entry "main" "$@"
+
+   local OPTION_VALUE
+   local cmd
+
+   while [ $# -ne 0 ]
+   do
+      if options_technical_flags "$1"
+      then
+         shift
+         continue
+      fi
+
+      case "$1" in
+         -f|--force)
+            MULLE_FLAG_MAGNUM_FORCE='YES'
+         ;;
+
+         -g|--global)
+            MULLE_TODO_GLOBAL='YES'
+         ;;
+
+         --here)
+            MULLE_TODO_FILE='.mulle/etc/todo/todo.txt'
+         ;;
+
+         --file)
+            [ $# -eq 1 ] && usage "missing argument to $1"
+            shift
+
+            MULLE_TODO_FILE="$1"
+         ;;
+
+         --debug-string)
+            [ $# -eq 1 ] && usage "missing argument to $1"
+            shift
+
+            # Debug: calculate visual width and show hex dump
+            calculate_visual_width "$1"
+            printf "Visual width: %d\n" "${RVAL}"
+            printf "%s\n" "$1" | hexdump -C
+            exit 0
+         ;;
+
+         -h*|--help|help)
+            usage
+         ;;
+
+         --version)
+            printf "%s\n" "${MULLE_EXECUTABLE_VERSION}"
+            exit 0
+         ;;
+
+         -*)
+            usage "Unknown flag \"$1\""
+         ;;
+
+         *)
+            break
+         ;;
+      esac
+
+      shift
+   done
+
+   options_setup_trace "${MULLE_TRACE}" && set -x
+
+   cmd="${1:-show}"
+   shift || true
+
+   case "${cmd}" in
+      add)
+         todo_add "$@"
+      ;;
+      
+      remove|rm|del)
+         todo_remove "$@"
+      ;;
+      
+      remove-all|clear)
+         todo_remove_all
+      ;;
+      
+      up)
+         todo_move_up "$@"
+      ;;
+      
+      down)
+         todo_move_down "$@"
+      ;;
+      
+      list|ls)
+         todo_list "$@"
+      ;;
+      
+      show)
+         todo_show "$@"
+      ;;
+      
+      scan)
+         todo_scan
+      ;;
+
+      scan-import)
+         todo_scan "import"
+      ;;
+
+      install|install-shell-integration)
+         install_shell_integration
+      ;;
+
+      *)
+         fail "Unknown command: ${cmd}"
+      ;;
+   esac
+}
+
+main "$@"
