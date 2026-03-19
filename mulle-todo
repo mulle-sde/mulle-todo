@@ -1743,7 +1743,10 @@ function r_list_remove()
 {
    local sep="${3:- }"
 
-   RVAL="${sep}$1${sep}//${sep}$2${sep}/}"
+   local s
+
+   s="${sep}$1${sep}"
+   RVAL="${s//${sep}$2${sep}/${sep}}"
    RVAL="${RVAL##"${sep}"}"
    RVAL="${RVAL%%"${sep}"}"
 }
@@ -1930,9 +1933,9 @@ ${lines}
    pattern="${pattern:2}"
    pattern="${pattern%???}"
 
-   local rval
+   local rc
 
-   rval=1
+   rc=1
 
    shell_is_extglob_enabled || _internal_fail "extglob must be enabled"
 
@@ -1940,18 +1943,18 @@ ${lines}
    then
       case "${escaped_lines}" in
          *"\\n${~pattern}\\n"*)
-            rval=0
+            rc=0
          ;;
       esac
    else
       case "${escaped_lines}" in
          *"\\n${pattern}\\n"*)
-            rval=0
+            rc=0
          ;;
       esac
    fi
 
-   return $rval
+   return $rc
 }
 
 
@@ -2495,17 +2498,17 @@ function r_expanded_string()
    local _s="${string}"
    local _expand="${expand}"
 
-   local rval
+   local rc
 
    _r_expand_string
-   rval=$?
+   rc=$?
 
-   if [ $rval -eq 0 ]
+   if [ $rc -eq 0 ]
    then
       RVAL="$(printf '%s' "${RVAL}" | sed 's/\\\${/${/g')"
    fi
 
-   return $rval
+   return $rc
 }
 
 
@@ -3751,12 +3754,12 @@ function mkdir_if_missing()
       return 0
    fi
 
-   local rval
+   local rc
 
    exekutor mkdir -p "$1"
-   rval="$?"
+   rc="$?"
 
-   if [ "${rval}" -eq 0 ]
+   if [ "${rc}" -eq 0 ]
    then
       log_fluff "Created directory \"$1\" (${PWD#"${MULLE_USER_PWD}/"})"
       return 0
@@ -3776,7 +3779,7 @@ function mkdir_if_missing()
    then
       fail "failed to create directory \"$1\" because a file is there"
    fi
-   fail "failed to create directory \"$1\" from $PWD ($rval)"
+   fail "failed to create directory \"$1\" from $PWD ($rc)"
 }
 
 
@@ -4696,7 +4699,7 @@ function inplace_sed()
    local args
    local filename
 
-   local rval 
+   local rc
 
 
    case "${MULLE_UNAME}" in
@@ -4726,8 +4729,8 @@ function inplace_sed()
          tmpfile="${RVAL}"
 
          redirect_eval_exekutor "${tmpfile}" 'sed' "${args}" "'${filename}'"
-         rval=$?
-         if [ $rval -eq 0 ]
+         rc=$?
+         if [ $rc -eq 0 ]
          then
             exekutor cp "${tmpfile}" "${filename}"
          fi
@@ -4736,11 +4739,11 @@ function inplace_sed()
 
       *)
          exekutor sed -i'' "$@"
-         rval=$?
+         rc=$?
       ;;
    esac
 
-   return ${rval}
+   return ${rc}
 }
 
 fi
@@ -5161,48 +5164,52 @@ todo_list()
          return
       fi
       
-      # Keep top 3, randomize the rest
-      top_three=()
-      rest=()
-      shuffled=()
+      # Keep top 3, randomize the rest (with original indices)
+      local -a display_indices
+      local -a rest_indices
+      local -a shuffled_indices
       
-      # Get top 3
+      # Get top 3 indices
       for ((i=0; i<3 && i<count; i++))
       do
-         top_three+=("${all_lines[${i}]}")
+         display_indices+=("${i}")
       done
       
-      # Get remaining items
+      # Get remaining indices
       for ((i=3; i<count; i++))
       do
-         rest+=("${all_lines[${i}]}")
+         rest_indices+=("${i}")
       done
       
-      # Shuffle remaining items
-      if [ ${#rest[@]} -gt 0 ]
+      # Shuffle remaining indices
+      if [ ${#rest_indices[@]} -gt 0 ]
       then
          oldifs="${IFS}"
          IFS=$'\n'
-         shuffled=($(rexekutor printf "%s\n" "${rest[@]}" | rexekutor shuf))
+         shuffled_indices=($(rexekutor printf "%s\n" "${rest_indices[@]}" | rexekutor shuf))
          IFS="${oldifs}"
       fi
       
-      # Build display list
-      display_lines=("${top_three[@]}")
-      
+      # Add random indices to display list
       remaining=$((limit - 3))
-      if [ "${remaining}" -gt 0 ] && [ ${#shuffled[@]} -gt 0 ]
+      if [ "${remaining}" -gt 0 ] && [ ${#shuffled_indices[@]} -gt 0 ]
       then
-         for ((i=0; i<remaining && i<${#shuffled[@]}; i++))
+         for ((i=0; i<remaining && i<${#shuffled_indices[@]}; i++))
          do
-            display_lines+=("${shuffled[${i}]}")
+            display_indices+=("${shuffled_indices[${i}]}")
          done
       fi
       
-      # Display
-      for ((i=0; i<${#display_lines[@]}; i++))
+      # Sort indices so numbers appear in order
+      oldifs="${IFS}"
+      IFS=$'\n'
+      display_indices=($(printf "%s\n" "${display_indices[@]}" | sort -n))
+      IFS="${oldifs}"
+      
+      # Display with real line numbers
+      for idx in "${display_indices[@]}"
       do
-         printf "%3d. %s\n" "$((i + 1))" "${display_lines[${i}]}"
+         printf "%3d. %s\n" "$((idx + 1))" "${all_lines[${idx}]}"
       done
       
       if [ "${limit}" -lt "${count}" ]
@@ -5290,7 +5297,9 @@ todo_show()
    IFS=$'\n' read -d '' -ra all_lines <<< "${todos}" || true
    count=${#all_lines[@]}
    
-   # Determine which items to display
+   # Determine which items to display (track original indices)
+   local -a display_indices
+   
    if [ -n "${limit}" ] && [ "${limit}" -lt "${count}" ]
    then
       # Handle small limits
@@ -5299,51 +5308,74 @@ todo_show()
          for ((i=0; i<limit && i<count; i++))
          do
             display_lines+=("${all_lines[${i}]}")
+            display_indices+=("${i}")
          done
       else
          # Keep top 3, randomize the rest
-         top_three=()
-         rest=()
-         shuffled=()
+         local -a rest_indices
+         local -a shuffled_indices
          
          for ((i=0; i<3 && i<count; i++))
          do
-            top_three+=("${all_lines[${i}]}")
+            display_lines+=("${all_lines[${i}]}")
+            display_indices+=("${i}")
          done
          
+         rest=()
+         rest_indices=()
          for ((i=3; i<count; i++))
          do
             rest+=("${all_lines[${i}]}")
+            rest_indices+=("${i}")
          done
          
          if [ ${#rest[@]} -gt 0 ]
          then
+            # Shuffle indices, pick items by shuffled index
             oldifs="${IFS}"
             IFS=$'\n'
-            shuffled=($(rexekutor printf "%s\n" "${rest[@]}" | rexekutor shuf))
+            shuffled_indices=($(rexekutor printf "%s\n" "${rest_indices[@]}" | rexekutor shuf))
             IFS="${oldifs}"
          fi
          
-         display_lines=("${top_three[@]}")
-         
          remaining=$((limit - 3))
-         if [ "${remaining}" -gt 0 ] && [ ${#shuffled[@]} -gt 0 ]
+         if [ "${remaining}" -gt 0 ] && [ ${#shuffled_indices[@]} -gt 0 ]
          then
-            for ((i=0; i<remaining && i<${#shuffled[@]}; i++))
+            for ((i=0; i<remaining && i<${#shuffled_indices[@]}; i++))
             do
-               display_lines+=("${shuffled[${i}]}")
+               display_lines+=("${all_lines[${shuffled_indices[${i}]}]}")
+               display_indices+=("${shuffled_indices[${i}]}")
             done
          fi
+
+         # Sort by index so numbers appear in order
+         local -a sorted_indices
+         local -a sorted_lines
+         oldifs="${IFS}"
+         IFS=$'\n'
+         sorted_indices=($(printf "%s\n" "${display_indices[@]}" | sort -n))
+         IFS="${oldifs}"
+         sorted_lines=()
+         for idx in "${sorted_indices[@]}"
+         do
+            sorted_lines+=("${all_lines[${idx}]}")
+         done
+         display_indices=("${sorted_indices[@]}")
+         display_lines=("${sorted_lines[@]}")
       fi
    else
-      display_lines=("${all_lines[@]}")
+      for ((i=0; i<count; i++))
+      do
+         display_lines+=("${all_lines[${i}]}")
+         display_indices+=("${i}")
+      done
    fi
    
    # Calculate max content width considering number width and emoji
    # Number width: "▸ NNN. " where NNN can be 1-3 digits
    max_width=0
    num_items=${#display_lines[@]}
-   num_width=${#num_items}  # digits in highest number
+   num_width=${#count}  # digits in highest possible number
    prefix_width=$((num_width + 4))  # "▸ N. " minimum
    
    for line in "${display_lines[@]}"
@@ -5413,7 +5445,7 @@ todo_show()
    # Items
    for ((i=0; i<${#display_lines[@]}; i++))
    do
-      item_num=$((i + 1))
+      item_num=$((display_indices[${i}] + 1))
       item_text="${display_lines[${i}]}"
       
       # Calculate actual visual width needed for this item

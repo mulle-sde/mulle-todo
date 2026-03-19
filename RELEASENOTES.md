@@ -1,3 +1,7 @@
+### 0.2.2
+
+* emit true index so users dont actually wrong item by number
+
 ### 0.2.1
 
 
