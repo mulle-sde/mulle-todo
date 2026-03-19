@@ -147,7 +147,7 @@ esac
 #
 # Versioning of this script
 #
-MULLE_EXECUTABLE_VERSION="0.2.1"
+MULLE_EXECUTABLE_VERSION="0.2.2"
 
 
 ### >> START OF mulle-bashfunctions-embed.sh >>
@@ -4823,6 +4823,7 @@ get_todofile()
    fi
 }
 
+
 calculate_visual_width()
 {
    log_entry "calculate_visual_width" "$@"
@@ -4885,6 +4886,7 @@ calculate_visual_width()
    RVAL="${visual_width}"
 }
 
+
 ensure_todofile()
 {
    log_entry "ensure_todofile" "$@"
@@ -4901,6 +4903,7 @@ ensure_todofile()
       redirect_exekutor "${todofile}" printf "%s\n" "# Todo List"
    fi
 }
+
 
 read_todos()
 {
@@ -4920,6 +4923,7 @@ read_todos()
    RVAL="$(rexekutor grep -v '^#' "${todofile}" 2>/dev/null || true)"
 }
 
+
 write_todos()
 {
    log_entry "write_todos" "$@"
@@ -4934,6 +4938,7 @@ write_todos()
    
    redirect_exekutor "${todofile}" printf "%s\n" "# Todo List" "${todos}"
 }
+
 
 todo_add()
 {
@@ -4952,6 +4957,7 @@ todo_add()
    
    log_info "Added: ${text}"
 }
+
 
 todo_remove()
 {
@@ -4995,6 +5001,7 @@ todo_remove()
    log_info "Removed item ${number}"
 }
 
+
 todo_remove_all()
 {
    log_entry "todo_remove_all" "$@"
@@ -5013,6 +5020,7 @@ todo_remove_all()
    redirect_exekutor "${todofile}" printf "%s\n" "# Todo List"
    log_info "Removed all todo items"
 }
+
 
 todo_move_up()
 {
@@ -5066,6 +5074,7 @@ todo_move_up()
    log_info "Moved item ${number} up"
 }
 
+
 todo_move_down()
 {
    log_entry "todo_move_down" "$@"
@@ -5111,6 +5120,7 @@ todo_move_down()
    
    log_info "Moved item ${number} down"
 }
+
 
 todo_list()
 {
@@ -5226,6 +5236,7 @@ todo_list()
       done
    fi
 }
+
 
 todo_show()
 {
@@ -5506,6 +5517,7 @@ todo_show()
    printf "%b\n" "┛${C_RESET}"
 }
 
+
 todo_scan()
 {
    log_entry "todo_scan" "$@"
@@ -5688,6 +5700,7 @@ todo_scan()
    fi
 }
 
+
 remove_scanned_todos()
 {
    log_entry "remove_scanned_todos" "$@"
@@ -5727,6 +5740,7 @@ remove_scanned_todos()
       done
    ) | redirect_exekutor "${todofile}" cat
 }
+
 
 install_shell_integration()
 {
@@ -5795,6 +5809,7 @@ fi
    log_info "✅ Shell integration installed successfully!"
    log_info "Open a new shell or run: source ${shell_rc}"
 }
+
 
 main()
 {
@@ -5907,6 +5922,11 @@ main()
 
       install|install-shell-integration)
          install_shell_integration
+      ;;
+
+      version)
+         printf "%s\n" "${MULLE_EXECUTABLE_VERSION}"
+         exit 0
       ;;
 
       *)
