@@ -8,6 +8,6 @@
       reponame="mulle-todo";
       homepage="https://github.com/mulle-sde/mulle-todo";
       license="BSD-3-Clause";
-      version="0.2.0"
+      version="0.2.4"
    };
 }
